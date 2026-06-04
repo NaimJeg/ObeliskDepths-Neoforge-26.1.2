@@ -1,0 +1,15 @@
+{
+  "name": "obeliskdepths:depths/site_start",
+  "fallback": "minecraft:empty",
+  "elements": [
+    {
+      "weight": 1,
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "obeliskdepths:depths/start/start_room_01",
+        "projection": "rigid",
+        "processors": "minecraft:empty"
+      }
+    }
+  ]
+}

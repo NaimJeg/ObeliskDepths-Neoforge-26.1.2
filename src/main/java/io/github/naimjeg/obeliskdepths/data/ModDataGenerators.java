@@ -1,0 +1,40 @@
+package io.github.naimjeg.obeliskdepths.data;
+
+import io.github.naimjeg.obeliskdepths.ObeliskDepths;
+import net.minecraft.data.loot.LootTableProvider;
+import net.minecraft.world.level.storage.loot.parameters.LootContextParamSets;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.data.event.GatherDataEvent;
+
+import java.util.List;
+import java.util.Set;
+
+@EventBusSubscriber(modid = ObeliskDepths.MOD_ID)
+public final class ModDataGenerators {
+    private ModDataGenerators() {
+    }
+
+    @SubscribeEvent
+    public static void gatherClientData(GatherDataEvent.Client event) {
+        event.createProvider(ModModelProvider::new);
+        event.createProvider(LangEnUsProvider::new);
+    }
+
+    @SubscribeEvent
+    public static void gatherServerData(GatherDataEvent.Server event) {
+        event.createProvider(ModBlockTagProvider::new);
+
+        event.createProvider((output, lookupProvider) -> new LootTableProvider(
+                output,
+                Set.of(),
+                List.of(
+                        new LootTableProvider.SubProviderEntry(
+                                ModBlockLootProvider::new,
+                                LootContextParamSets.BLOCK
+                        )
+                ),
+                lookupProvider
+        ));
+    }
+}

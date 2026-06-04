@@ -1,0 +1,14 @@
+{
+  "structures": [
+    {
+      "structure": "obeliskdepths:depths_site",
+      "weight": 1
+    }
+  ],
+  "placement": {
+    "type": "minecraft:random_spread",
+    "spacing": 8,
+    "separation": 4,
+    "salt": 91827364
+  }
+}

@@ -1,0 +1,233 @@
+package io.github.naimjeg.obeliskdepths.data;
+
+import io.github.naimjeg.obeliskdepths.ObeliskDepths;
+import io.github.naimjeg.obeliskdepths.registry.ModBlocks;
+import io.github.naimjeg.obeliskdepths.registry.ModItems;
+import net.minecraft.data.PackOutput;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.level.block.Block;
+import net.neoforged.neoforge.common.data.LanguageProvider;
+import net.neoforged.neoforge.registries.DeferredBlock;
+import net.neoforged.neoforge.registries.DeferredItem;
+
+import java.util.Locale;
+import java.util.Set;
+
+public final class LangEnUsProvider extends LanguageProvider {
+    private static final String LOCALE = "en_us";
+
+    /*
+     * IDs excluded from automatic block name generation.
+     *
+     * Use this when:
+     * - the generated name is awkward,
+     * - the block should be hidden,
+     * - the block needs a lore-specific display name,
+     * - or the block should be translated manually.
+     */
+    private static final Set<Identifier> EXCLUDED_BLOCK_IDS = Set.of(
+            // Example:
+            // ModBlocks.DUNGEON_VINE.getId()
+    );
+
+    /*
+     * IDs excluded from automatic item name generation.
+     *
+     * BlockItem translations are usually covered by addBlock(...).
+     * This list is mostly for standalone items from ModItems.
+     */
+    private static final Set<Identifier> EXCLUDED_ITEM_IDS = Set.of(
+            // Example:
+            // ModItems.TEMPERING_SMITHING_TEMPLATE.getId()
+    );
+
+    public LangEnUsProvider(PackOutput output) {
+        super(output, ObeliskDepths.MOD_ID, LOCALE);
+    }
+
+    @Override
+    protected void addTranslations() {
+        addCreativeTabs();
+
+        addGeneratedBlockNames();
+
+        addGeneratedItemNames();
+
+        addManualOverrides();
+    }
+
+    private void addCreativeTabs() {
+        add(
+                "itemGroup." + ObeliskDepths.MOD_ID + ".building_blocks",
+                "Obelisk Depths Building Blocks"
+        );
+
+        add(
+                "itemGroup." + ObeliskDepths.MOD_ID + ".obelisk_items",
+                "Obelisk Depths Items"
+        );
+    }
+
+    private void addGeneratedBlockNames() {
+        addGeneratedBlock(ModBlocks.OBELISK);
+        addGeneratedBlock(ModBlocks.OBELISK_SMITHING_TABLE);
+
+        addGeneratedBlock(ModBlocks.DUNGEON_STONE);
+        addGeneratedBlock(ModBlocks.REINFORCED_DUNGEON_STONE);
+        addGeneratedBlock(ModBlocks.DUNGEON_BRICKS);
+        addGeneratedBlock(ModBlocks.DUNGEON_TILES);
+        addGeneratedBlock(ModBlocks.DUNGEON_CRACKED_TILES);
+        addGeneratedBlock(ModBlocks.DUNGEON_CRACKED_BRICKS);
+
+        addGeneratedBlock(ModBlocks.GREAT_SWAMP_GRASS_BLOCK);
+        addGeneratedBlock(ModBlocks.GREAT_SWAMP_COARSE_DIRT);
+        addGeneratedBlock(ModBlocks.GREAT_SWAMP_MUD);
+        addGeneratedBlock(ModBlocks.GREAT_SWAMP_DIRT);
+        addGeneratedBlock(ModBlocks.GREAT_SWAMP_ROOTED_DIRT);
+        addGeneratedBlock(ModBlocks.GREAT_SWAMP_VINES);
+
+        addGeneratedBlock(ModBlocks.DUNGEON_LAMP);
+    }
+
+    private void addGeneratedItemNames() {
+        //addGeneratedItem(ModItems.TEMPERING_SMITHING_TEMPLATE);
+    }
+
+    private void addManualOverrides() {
+
+        add(ModItems.TEMPERING_SMITHING_TEMPLATE.get(), "Tempering Upgrade");
+        add(
+                "container.obeliskdepths.obelisk_tempering",
+                "Obelisk Tempering"
+        );
+        add(
+                "gui.obeliskdepths.tempering.invalid_recipe",
+                "No matching tempering recipe"
+        );
+        add(
+                "gui.obeliskdepths.tempering.directions",
+                "Directions"
+        );
+        add(
+                "gui.obeliskdepths.tempering.possible_affixes",
+                "Possible Affixes"
+        );
+        add(
+                "gui.obeliskdepths.tempering.preview_unavailable",
+                "Pool preview unavailable"
+        );
+        add(
+                "gui.obeliskdepths.tempering.no_possible_affixes",
+                "No possible affixes"
+        );
+        add(
+                "tempering_direction.obeliskdepths.balance",
+                "Balance"
+        );
+        add(
+                "tempering_direction.obeliskdepths.edge",
+                "Edge"
+        );
+        add(
+                "tempering_direction.obeliskdepths.guard",
+                "Guard"
+        );
+        add(
+                "tempering_direction.obeliskdepths.echo",
+                "Echo"
+        );
+        add(
+                "tooltip.obeliskdepths.tempering_template.tier",
+                "Tempering Tier: %s"
+        );
+        add(
+                "tooltip.obeliskdepths.tempering_template.weight",
+                "Tempering Weight: %s"
+        );
+        add(
+                "entry.obeliskdepths.fire_edge.name",
+                "Fire Edge"
+        );
+        add(
+                "entry.obeliskdepths.fire_edge.flavor",
+                "A tempering mark that burns through the weapon edge."
+        );
+        add(
+                "entry.obeliskdepths.critical_edge.name",
+                "Critical Edge"
+        );
+        add(
+                "entry.obeliskdepths.critical_edge.flavor",
+                "A tempering mark that rewards clean decisive strikes."
+        );
+        /*
+         * Manual translations go here.
+         *
+         * Do not add a key here if it was already generated above,
+         * because LanguageProvider throws on duplicate translation keys.
+         */
+
+        // Example:
+        // add(ModBlocks.OBELISK.get(), "Depth Obelisk");
+
+        // Example:
+        // add(ModItems.TEMPERING_SMITHING_TEMPLATE.get(), "Obelisk Tempering Smithing Template");
+    }
+
+    private void addGeneratedBlock(DeferredBlock<? extends Block> block) {
+        Identifier id = block.getId();
+
+        if (EXCLUDED_BLOCK_IDS.contains(id)) {
+            return;
+        }
+
+        addBlock(block, nameFromId(id));
+    }
+
+    private void addGeneratedItem(DeferredItem<? extends Item> item) {
+        Identifier id = item.getId();
+
+        if (EXCLUDED_ITEM_IDS.contains(id)) {
+            return;
+        }
+
+        addItem(item, nameFromId(id));
+    }
+
+    private static String nameFromId(Identifier id) {
+        return nameFromPath(id.getPath());
+    }
+
+    private static String nameFromPath(String path) {
+        String[] words = path.split("_");
+        StringBuilder result = new StringBuilder();
+
+        for (String word : words) {
+            if (word.isBlank()) {
+                continue;
+            }
+
+            if (!result.isEmpty()) {
+                result.append(' ');
+            }
+
+            result.append(capitalize(word));
+        }
+
+        return result.toString();
+    }
+
+    private static String capitalize(String word) {
+        if (word.isEmpty()) {
+            return word;
+        }
+
+        if (word.length() == 1) {
+            return word.toUpperCase(Locale.ROOT);
+        }
+
+        return word.substring(0, 1).toUpperCase(Locale.ROOT)
+                + word.substring(1).toLowerCase(Locale.ROOT);
+    }
+}

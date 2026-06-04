@@ -1,0 +1,49 @@
+package io.github.naimjeg.obeliskdepths.dungeon.raid;
+
+import io.github.naimjeg.obeliskdepths.dungeon.identity.DungeonPlayerIdentity;
+import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonInstance;
+import io.github.naimjeg.obeliskdepths.dungeon.spatial.DungeonSpatialValidation;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+
+import java.util.List;
+
+public final class DungeonRaidPlayers {
+    private DungeonRaidPlayers() {
+    }
+
+    public static List<ServerPlayer> findActivePlayersInDungeon(
+            ServerLevel dungeonLevel,
+            DungeonInstance instance
+    ) {
+        return dungeonLevel.players().stream()
+                .filter(player -> DungeonPlayerIdentity.isActiveParticipantOf(
+                        player,
+                        instance.id()
+                ))
+                .toList();
+    }
+
+    public static List<ServerPlayer> findPhysicallyDesyncedPlayers(
+            ServerLevel dungeonLevel,
+            DungeonInstance instance
+    ) {
+        return findActivePlayersInDungeon(dungeonLevel, instance).stream()
+                .filter(player -> !DungeonSpatialValidation.playerIsPhysicallyInsideInstance(
+                        dungeonLevel,
+                        player,
+                        instance.id()
+                ))
+                .toList();
+    }
+
+    /*
+     * Temporary implementation note:
+     *
+     * Previously this class used DungeonRegionIndex.findOwner(player.blockPosition())
+     * as the membership test. That is fragile because position is not identity.
+     *
+     * Keep spatial validation only for correction/debugging. Raid participation
+     * should be based on PlayerDungeonData.currentInstanceId.
+     */
+}

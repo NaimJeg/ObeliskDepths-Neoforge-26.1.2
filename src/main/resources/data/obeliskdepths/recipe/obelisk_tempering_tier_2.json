@@ -1,0 +1,25 @@
+{
+  "type": "obeliskdepths:obelisk_tempering",
+  "template": {
+    "item": "obeliskdepths:tempering_smithing_template"
+  },
+  "weapon": {
+    "tag": "minecraft:enchantable/sword"
+  },
+  "ingredient": {
+    "item": "minecraft:echo_shard"
+  },
+  "pool": "obeliskdepths:basic",
+  "min_tier": 2,
+  "max_tier": 2,
+  "min_rolls": 2,
+  "max_rolls": 4,
+  "weight_multiplier": 1.0,
+  "replace_existing": false,
+  "allowed_directions": [
+    "balance",
+    "edge",
+    "guard",
+    "echo"
+  ]
+}

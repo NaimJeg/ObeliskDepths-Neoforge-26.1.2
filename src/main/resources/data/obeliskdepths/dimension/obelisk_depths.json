@@ -1,0 +1,38 @@
+{
+  "type": "obeliskdepths:obelisk_depths",
+  "generator": {
+    "type": "minecraft:flat",
+    "settings": {
+      "biome": "obeliskdepths:great_swamp",
+      "features": false,
+      "lakes": false,
+      "layers": [
+        {
+          "block": "minecraft:bedrock",
+          "height": 1
+        },
+        {
+          "block": "minecraft:deepslate",
+          "height": 7
+        },
+        {
+          "block": "minecraft:mud",
+          "height": 1
+        },
+        {
+          "block": "minecraft:air",
+          "height": 111
+        },
+        {
+          "block": "minecraft:deepslate",
+          "height": 7
+        },
+        {
+          "block": "minecraft:bedrock",
+          "height": 1
+        }
+      ],
+      "structure_overrides": "obeliskdepths:obelisk_dungeons"
+    }
+  }
+}

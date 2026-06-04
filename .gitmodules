@@ -1,0 +1,3 @@
+[submodule "libs/DamageNexus"]
+	path = libs/DamageNexus
+	url = https://github.com/naimjeg/DamageNexus-NeoForge26.1.2

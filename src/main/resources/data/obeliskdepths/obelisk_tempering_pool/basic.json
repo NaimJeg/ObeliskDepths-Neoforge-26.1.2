@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "entry": "obeliskdepths:tempering/fire_edge",
+      "weight": 10
+    },
+    {
+      "entry": "obeliskdepths:tempering/critical_edge",
+      "weight": 5
+    }
+  ]
+}
