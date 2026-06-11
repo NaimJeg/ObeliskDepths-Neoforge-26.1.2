@@ -23,6 +23,11 @@ public final class DungeonInstanceService {
      * Runtime reserves an unreached vanilla-generated dungeon site and creates
      * instance state for it. It does not generate terrain or accept planned
      * prototype projections as real dungeon metadata.
+     *
+     * Worldgen owns physical geometry: rooms, corridors, flat debug planes today,
+     * and later .nbt template-backed pieces. Runtime only binds to the projected
+     * DungeonSite contract: site key, bounds, start position, generated room
+     * ids/types/bounds/anchors, and future connector metadata.
      */
     public static Optional<DungeonInstance> reserveNearestUnreachedWorldgenSite(
             ServerLevel dungeonLevel,
@@ -41,7 +46,9 @@ public final class DungeonInstanceService {
         if (resolved.isEmpty()) {
             io.github.naimjeg.obeliskdepths.ObeliskDepths.LOGGER.warn(
                     "No authoritative dungeon site found near origin={} in level={}. " +
-                            "Check structure JSON, biome tag, placement, and generated structure-start lookup.",
+                            "Check structure JSON, biome tag, placement, generated chunk/structure-start lookup, " +
+                            "or use debug commands to enter/warm the ObeliskDepths dimension. " +
+                            "Runtime will not fallback to prototype metadata.",
                     origin,
                     dungeonLevel.dimension().identifier()
             );

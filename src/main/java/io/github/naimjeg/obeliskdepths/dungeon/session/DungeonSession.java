@@ -42,6 +42,9 @@ public final class DungeonSession {
                             .optionalFieldOf("participants", List.of())
                             .forGetter(session -> List.copyOf(session.participants)),
                     DungeonCodecs.UUID_CODEC.listOf()
+                            .optionalFieldOf("physical_participants", List.of())
+                            .forGetter(session -> List.copyOf(session.physicalParticipants)),
+                    DungeonCodecs.UUID_CODEC.listOf()
                             .optionalFieldOf("spawned_entity_ids", List.of())
                             .forGetter(session -> List.copyOf(session.spawnedEntityIds)),
                     DungeonKillProgress.CODEC
@@ -63,6 +66,7 @@ public final class DungeonSession {
     private final UUID starterPlayerId;
     private final DungeonSiteKey siteKey;
     private final Set<UUID> participants = new HashSet<>();
+    private final Set<UUID> physicalParticipants = new HashSet<>();
     private final Set<UUID> spawnedEntityIds = new HashSet<>();
     private final long createdAtGameTime;
 
@@ -81,6 +85,7 @@ public final class DungeonSession {
             DungeonSessionState state,
             DungeonAccessMode accessMode,
             Collection<UUID> participants,
+            Collection<UUID> physicalParticipants,
             Collection<UUID> spawnedEntityIds,
             DungeonKillProgress progress,
             DungeonRewardState rewardState,
@@ -104,6 +109,10 @@ public final class DungeonSession {
             this.participants.addAll(participants);
         }
 
+        if (physicalParticipants != null) {
+            this.physicalParticipants.addAll(physicalParticipants);
+        }
+
         if (spawnedEntityIds != null) {
             this.spawnedEntityIds.addAll(spawnedEntityIds);
         }
@@ -125,6 +134,7 @@ public final class DungeonSession {
                 instance.siteKey(),
                 DungeonSessionState.ACTIVE,
                 accessMode,
+                Set.of(starterPlayerId),
                 Set.of(starterPlayerId),
                 Set.of(),
                 DungeonKillProgress.empty(),
@@ -163,6 +173,10 @@ public final class DungeonSession {
         return Collections.unmodifiableSet(this.participants);
     }
 
+    public Set<UUID> physicalParticipants() {
+        return Collections.unmodifiableSet(this.physicalParticipants);
+    }
+
     public Set<UUID> spawnedEntityIds() {
         return Collections.unmodifiableSet(this.spawnedEntityIds);
     }
@@ -191,8 +205,16 @@ public final class DungeonSession {
         return this.participants.add(playerId);
     }
 
+    public boolean registerPhysicalParticipant(UUID playerId) {
+        return this.physicalParticipants.add(playerId);
+    }
+
     public boolean isParticipant(UUID playerId) {
         return this.participants.contains(playerId);
+    }
+
+    public boolean isPhysicalParticipant(UUID playerId) {
+        return this.physicalParticipants.contains(playerId);
     }
 
     public boolean setState(DungeonSessionState state) {

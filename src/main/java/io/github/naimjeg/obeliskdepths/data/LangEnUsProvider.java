@@ -161,6 +161,67 @@ public final class LangEnUsProvider extends LanguageProvider {
                 "entry.obeliskdepths.critical_edge.flavor",
                 "A tempering mark that rewards clean decisive strikes."
         );
+
+        add(
+                "container.obeliskdepths.obelisk_portal",
+                "Obelisk Portal"
+        );
+        add(
+                "gui.obeliskdepths.portal.mode.solo",
+                "Solo"
+        );
+        add(
+                "gui.obeliskdepths.portal.mode.party_open",
+                "Party"
+        );
+        add(
+                "gui.obeliskdepths.portal.start",
+                "Start"
+        );
+        add(
+                "gui.obeliskdepths.portal.tribute",
+                "Tribute"
+        );
+        add(
+                "gui.obeliskdepths.portal.selected.solo",
+                "Selected: Solo portal"
+        );
+        add(
+                "gui.obeliskdepths.portal.selected.party_open",
+                "Selected: Party portal"
+        );
+        add(
+                "gui.obeliskdepths.portal.note",
+                "Mode controls portal entry only."
+        );
+        add(
+                "gui.obeliskdepths.portal.loading",
+                "Preparing dungeon..."
+        );
+        add(
+                "gui.obeliskdepths.portal.failed",
+                "Activation failed."
+        );
+        add(
+                "message.obeliskdepths.obelisk.no_dimension",
+                "ObeliskDepths dimension was not found."
+        );
+        add(
+                "message.obeliskdepths.obelisk.inside_dungeon_denied",
+                "Obelisks cannot be used inside the dungeon."
+        );
+        add(
+                "message.obeliskdepths.obelisk.invalid_tribute",
+                "Invalid tribute."
+        );
+        add(
+                "message.obeliskdepths.obelisk.invalid_obelisk",
+                "The obelisk is no longer valid."
+        );
+        add(
+                "message.obeliskdepths.obelisk.activation_failed",
+                "Failed to open dungeon."
+        );
         /*
          * Manual translations go here.
          *

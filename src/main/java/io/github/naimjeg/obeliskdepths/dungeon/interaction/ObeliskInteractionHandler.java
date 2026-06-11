@@ -37,6 +37,22 @@ public final class ObeliskInteractionHandler {
                 ? DungeonAccessMode.SOLO
                 : DungeonAccessMode.PARTY_OPEN;
 
+        return activate(
+                player,
+                dungeonLevel,
+                obeliskPos,
+                requestedMode,
+                player.getMainHandItem()
+        );
+    }
+
+    public static boolean activate(
+            ServerPlayer player,
+            ServerLevel dungeonLevel,
+            BlockPos obeliskPos,
+            DungeonAccessMode requestedMode,
+            ItemStack tributeStack
+    ) {
         long gameTime = player.level().getGameTime();
 
         if (requestedMode == DungeonAccessMode.PARTY_OPEN) {
@@ -53,6 +69,7 @@ public final class ObeliskInteractionHandler {
                         dungeonLevel,
                         existingTarget.get(),
                         null,
+                        tributeStack,
                         false,
                         obeliskPos,
                         gameTime
@@ -60,12 +77,11 @@ public final class ObeliskInteractionHandler {
             }
         }
 
-        ItemStack tributeStack = player.getMainHandItem();
         ResolvedTribute tribute = TributeResolver.resolve(tributeStack);
 
         if (!tribute.valid()) {
             player.sendOverlayMessage(
-                    Component.literal("Invalid tribute.")
+                    Component.translatable("message.obeliskdepths.obelisk.invalid_tribute")
             );
             return false;
         }
@@ -74,6 +90,14 @@ public final class ObeliskInteractionHandler {
         PortalSession session = null;
 
         try {
+            /*
+             * Keep the existing runtime model.
+             *
+             * This reserves an authoritative worldgen dungeon site. Do not replace
+             * this with a fake/prototype lookup, and do not add a separate preload
+             * transport path here. The actual chunk generation/loading should still
+             * be triggered by the real player teleport below in enterTarget(...).
+             */
             Optional<DungeonInstance> createdInstance =
                     DungeonInstanceService.reserveNearestUnreachedWorldgenSite(
                             dungeonLevel,
@@ -110,6 +134,7 @@ public final class ObeliskInteractionHandler {
                     dungeonLevel,
                     newTarget,
                     tribute,
+                    tributeStack,
                     true,
                     obeliskPos,
                     gameTime
@@ -125,7 +150,7 @@ public final class ObeliskInteractionHandler {
             );
 
             player.sendOverlayMessage(
-                    Component.literal("Failed to open dungeon.")
+                    Component.translatable("message.obeliskdepths.obelisk.activation_failed")
             );
 
             return false;
@@ -170,6 +195,7 @@ public final class ObeliskInteractionHandler {
             ServerLevel dungeonLevel,
             ActivationTarget target,
             ResolvedTribute tribute,
+            ItemStack tributeStack,
             boolean consumeTributeOnSuccess,
             BlockPos obeliskPos,
             long gameTime
@@ -262,10 +288,10 @@ public final class ObeliskInteractionHandler {
 
             playerBound = true;
 
-            if (consumeTributeOnSuccess && tribute != null) {
+            if (consumeTributeOnSuccess && tribute != null && tributeStack != null) {
                 consumeTributeIfNeeded(
                         enteredPlayer,
-                        enteredPlayer.getMainHandItem(),
+                        tributeStack,
                         tribute
                 );
             }

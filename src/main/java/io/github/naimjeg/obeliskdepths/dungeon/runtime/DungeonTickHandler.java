@@ -3,6 +3,7 @@ package io.github.naimjeg.obeliskdepths.dungeon.runtime;
 import io.github.naimjeg.obeliskdepths.ObeliskDepths;
 import io.github.naimjeg.obeliskdepths.dungeon.entity.DungeonEntityCleanupService;
 import io.github.naimjeg.obeliskdepths.dungeon.lifecycle.DungeonCleanupService;
+import io.github.naimjeg.obeliskdepths.dungeon.presence.DungeonPhysicalPresenceService;
 import io.github.naimjeg.obeliskdepths.dungeon.raid.DungeonRaidTicker;
 import io.github.naimjeg.obeliskdepths.dungeon.session.DungeonSessionManager;
 import io.github.naimjeg.obeliskdepths.dungeon.state.DungeonManagerSavedData;
@@ -33,6 +34,7 @@ public final class DungeonTickHandler {
         }
 
         tickDungeonState(level);
+        tickPhysicalPresence(level);
         tickSessions(level);
         tickDelayedCleanup(level);
         tickRaids(level);
@@ -41,6 +43,15 @@ public final class DungeonTickHandler {
 
     private static void tickDungeonState(ServerLevel level) {
         DungeonManagerSavedData.get(level).tick(level);
+    }
+
+    private static void tickPhysicalPresence(ServerLevel level) {
+        for (var player : level.players()) {
+            DungeonPhysicalPresenceService.tickPlayerPhysicalPresence(
+                    level,
+                    player
+            );
+        }
     }
 
     private static void tickSessions(ServerLevel level) {

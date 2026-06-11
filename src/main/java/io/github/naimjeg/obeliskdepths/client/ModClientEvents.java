@@ -1,6 +1,7 @@
 package io.github.naimjeg.obeliskdepths.client;
 
 import io.github.naimjeg.obeliskdepths.ObeliskDepths;
+import io.github.naimjeg.obeliskdepths.client.screen.ObeliskPortalScreen;
 import io.github.naimjeg.obeliskdepths.client.screen.ObeliskTemperingScreen;
 import io.github.naimjeg.obeliskdepths.registry.ModMenuTypes;
 import net.neoforged.api.distmarker.Dist;
@@ -21,6 +22,11 @@ public final class ModClientEvents {
         event.register(
                 ModMenuTypes.OBELISK_TEMPERING.get(),
                 ObeliskTemperingScreen::new
+        );
+
+        event.register(
+                ModMenuTypes.OBELISK_PORTAL.get(),
+                ObeliskPortalScreen::new
         );
     }
 }

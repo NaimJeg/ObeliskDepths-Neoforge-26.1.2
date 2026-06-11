@@ -1,5 +1,6 @@
 package io.github.naimjeg.obeliskdepths.dungeon.lifecycle;
 
+import io.github.naimjeg.obeliskdepths.dungeon.artifact.DungeonRuntimeArtifactCleanupService;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonInstance;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonInstanceService;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonStatus;
@@ -60,6 +61,10 @@ public final class DungeonCleanupService {
                             : DungeonSiteUsageStatus.ABANDONED;
 
             DungeonSessionManager.cleanupSessionsForInstance(
+                    dungeonLevel,
+                    instance.id()
+            );
+            DungeonRuntimeArtifactCleanupService.cleanupInstanceArtifacts(
                     dungeonLevel,
                     instance.id()
             );

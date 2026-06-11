@@ -1,6 +1,7 @@
 package io.github.naimjeg.obeliskdepths.registry;
 
 import io.github.naimjeg.obeliskdepths.ObeliskDepths;
+import io.github.naimjeg.obeliskdepths.menu.ObeliskPortalMenu;
 import io.github.naimjeg.obeliskdepths.menu.ObeliskTemperingMenu;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.flag.FeatureFlags;
@@ -18,6 +19,14 @@ public final class ModMenuTypes {
             MENU_TYPES.register("obelisk_tempering", () ->
                     new MenuType<>(
                             ObeliskTemperingMenu::new,
+                            FeatureFlags.DEFAULT_FLAGS
+                    )
+            );
+
+    public static final Supplier<MenuType<ObeliskPortalMenu>> OBELISK_PORTAL =
+            MENU_TYPES.register("obelisk_portal", () ->
+                    new MenuType<>(
+                            ObeliskPortalMenu::new,
                             FeatureFlags.DEFAULT_FLAGS
                     )
             );

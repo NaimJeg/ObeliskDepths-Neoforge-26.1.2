@@ -3,6 +3,7 @@ package io.github.naimjeg.obeliskdepths.dungeon.completion;
 import io.github.naimjeg.obeliskdepths.ObeliskDepths;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonInstance;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonInstanceService;
+import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonStatus;
 import io.github.naimjeg.obeliskdepths.dungeon.player.PlayerDungeonReturnResult;
 import io.github.naimjeg.obeliskdepths.dungeon.player.PlayerDungeonReturnService;
 import io.github.naimjeg.obeliskdepths.dungeon.player.PlayerDungeonTracker;
@@ -49,6 +50,30 @@ public final class DungeonCompletionService {
     public static DungeonCompletionResult completeAndReturnPlayer(
             ServerPlayer player
     ) {
+        /*
+         * Legacy/debug helper. Core gameplay should prefer enterRewardPhase(...):
+         * boss completion exposes reward chest gameplay first instead of
+         * returning only the triggering player.
+         */
+        DungeonCompletionResult phaseResult = enterRewardPhase(player);
+
+        if (phaseResult != DungeonCompletionResult.SUCCESS) {
+            return phaseResult;
+        }
+
+        PlayerDungeonReturnResult returnResult =
+                PlayerDungeonReturnService.returnPlayer(player);
+
+        if (returnResult != PlayerDungeonReturnResult.SUCCESS) {
+            return DungeonCompletionResult.RETURN_FAILED;
+        }
+
+        return DungeonCompletionResult.SUCCESS;
+    }
+
+    public static DungeonCompletionResult enterRewardPhase(
+            ServerPlayer player
+    ) {
         Optional<io.github.naimjeg.obeliskdepths.dungeon.id.DungeonInstanceId> instanceId =
                 PlayerDungeonTracker.currentInstanceId(player);
 
@@ -75,23 +100,20 @@ public final class DungeonCompletionService {
             return DungeonCompletionResult.NOT_COMPLETE;
         }
 
-        if (!DungeonInstanceService.markCompleted(dungeonLevel, instanceId.get())) {
+        if (!DungeonInstanceService.setStatus(
+                dungeonLevel,
+                instanceId.get(),
+                DungeonStatus.REWARD_PHASE
+        )) {
             return DungeonCompletionResult.INSTANCE_MISSING;
         }
 
         DungeonSessionManager.completeSession(dungeonLevel, instanceId.get());
 
         ObeliskDepths.LOGGER.debug(
-                "Dungeon instance completed: instance={}",
+                "Dungeon instance entered reward phase: instance={}",
                 instanceId.get()
         );
-
-        PlayerDungeonReturnResult returnResult =
-                PlayerDungeonReturnService.returnPlayer(player);
-
-        if (returnResult != PlayerDungeonReturnResult.SUCCESS) {
-            return DungeonCompletionResult.RETURN_FAILED;
-        }
 
         return DungeonCompletionResult.SUCCESS;
     }

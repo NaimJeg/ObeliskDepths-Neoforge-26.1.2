@@ -5,6 +5,7 @@ import net.minecraft.util.StringRepresentable;
 
 public enum DungeonStatus implements StringRepresentable {
     ACTIVE("active"),
+    REWARD_PHASE("reward_phase"),
     PORTAL_CLOSED("portal_closed"),
     CLEARED("cleared"),
     EXPIRED("expired");

@@ -14,6 +14,19 @@ public final class ObeliskDungeonLayoutAlgorithm {
     private ObeliskDungeonLayoutAlgorithm() {
     }
 
+    /*
+     * Prototype topology rules:
+     * - dungeon topology is connected and tree-shaped: a required path plus
+     *   optional branches/caps later
+     * - start connects through the required path to boss/exit
+     * - treasure rooms are optional branch/cap rooms
+     * - corridors are pieces with restricted connectors, not arbitrary overlap
+     *
+     * Runtime reads the emitted room/corridor ids, bounds, anchors, and future
+     * graph/connector metadata. Runtime must not regenerate topology. These flat
+     * planes are temporary geometry; later .nbt templates should provide
+     * connector metadata that this layout algorithm can snap together.
+     */
     public static SolvedDungeonLayout solveLinearPrototype(BlockPos startAnchor) {
         List<SolvedDungeonRoom> rooms = List.of(
                 solveRoom(new DungeonRoomSpec(

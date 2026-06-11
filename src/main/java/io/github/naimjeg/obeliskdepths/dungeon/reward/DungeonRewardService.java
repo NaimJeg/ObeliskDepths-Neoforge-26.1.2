@@ -15,7 +15,18 @@ public final class DungeonRewardService {
     private DungeonRewardService() {
     }
 
+    /*
+     * Compatibility note:
+     * DungeonRoomState.rewardClaimed currently means "room reward chest opened
+     * or consumed", not gameplay ownership by a player. Reward distribution is
+     * intentionally vanilla pickup based after chest contents are sprayed into
+     * the world.
+     */
     public static boolean isRewardEligible(DungeonRoomState room) {
+        return canSpawnRewardChest(room);
+    }
+
+    public static boolean canSpawnRewardChest(DungeonRoomState room) {
         return room.status() == DungeonRoomStatus.CLEARED
                 && !room.rewardClaimed()
                 && isRewardRoomType(room.type());
@@ -26,21 +37,28 @@ public final class DungeonRewardService {
             DungeonInstanceId instanceId,
             DungeonRoomId roomId
     ) {
+        return markRewardChestOpened(level, instanceId, roomId);
+    }
+
+    public static boolean markRewardChestOpened(
+            ServerLevel level,
+            DungeonInstanceId instanceId,
+            DungeonRoomId roomId
+    ) {
         DungeonManagerSavedData data = DungeonManagerSavedData.get(level);
         Optional<DungeonRoomState> room = data.getRoomState(instanceId, roomId);
 
-        if (room.isEmpty() || !isRewardEligible(room.get())) {
+        if (room.isEmpty() || !canSpawnRewardChest(room.get())) {
             return false;
         }
 
-        // TODO: Generate final loot using DungeonDifficulty.rewardCeilingTier()
-        // and DungeonDifficulty.rewardWeightMultiplier(). Tempering template
-        // rewards should use TemperingTemplateItems.createRewardTemplate().
+        sprayRewardContents(level, instanceId, roomId);
+
         boolean changed = data.markRewardClaimed(instanceId, roomId);
 
         if (changed) {
             ObeliskDepths.LOGGER.debug(
-                    "Dungeon reward claimed: instance={}, room={}",
+                    "Dungeon reward chest opened: instance={}, room={}",
                     instanceId,
                     roomId
             );
@@ -49,9 +67,28 @@ public final class DungeonRewardService {
         return changed;
     }
 
+    public static void sprayRewardContents(
+            ServerLevel level,
+            DungeonInstanceId instanceId,
+            DungeonRoomId roomId
+    ) {
+        /*
+         * TODO: Generate final loot using DungeonDifficulty.rewardCeilingTier()
+         * and DungeonDifficulty.rewardWeightMultiplier(). Tempering template
+         * rewards should use TemperingTemplateItems.createRewardTemplate().
+         *
+         * TODO: Tag dungeon reward drops with instance id so cleanup can remove
+         * unclaimed drops without deleting normal player-dropped items.
+         */
+        ObeliskDepths.LOGGER.debug(
+                "Dungeon reward spray placeholder: instance={}, room={}",
+                instanceId,
+                roomId
+        );
+    }
+
     private static boolean isRewardRoomType(DungeonRoomType type) {
-        return type == DungeonRoomType.COMBAT
-                || type == DungeonRoomType.BOSS
+        return type == DungeonRoomType.BOSS
                 || type == DungeonRoomType.TREASURE;
     }
 }

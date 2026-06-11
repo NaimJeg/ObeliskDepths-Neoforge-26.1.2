@@ -1,6 +1,7 @@
 package io.github.naimjeg.obeliskdepths.dungeon.session;
 
 import io.github.naimjeg.obeliskdepths.ObeliskDepths;
+import io.github.naimjeg.obeliskdepths.dungeon.artifact.DungeonRuntimeArtifactCleanupService;
 import io.github.naimjeg.obeliskdepths.dungeon.id.DungeonInstanceId;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonInstance;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonInstanceService;
@@ -87,6 +88,36 @@ public final class DungeonSessionManager {
         return created;
     }
 
+    public static DungeonSession getOrCreateDebugSession(
+            ServerLevel dungeonLevel,
+            DungeonInstance instance,
+            UUID starterPlayerId
+    ) {
+        DungeonManagerSavedData data = DungeonManagerSavedData.get(dungeonLevel);
+        Optional<DungeonSession> existing =
+                data.findSessionByInstance(instance.id());
+
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
+        /*
+         * Debug/dev entry is not a portal session and must not change portal
+         * semantics. It creates the minimum runtime session needed by encounter
+         * cleanup/progress systems after a real authoritative site is reserved.
+         */
+        DungeonSession created = DungeonSession.create(
+                instance,
+                starterPlayerId,
+                DungeonAccessMode.OPEN,
+                false,
+                dungeonLevel.getGameTime()
+        );
+
+        data.addSession(created);
+        return created;
+    }
+
     public static Optional<DungeonSession> findSessionByPlayer(
             ServerLevel dungeonLevel,
             UUID playerId
@@ -124,6 +155,27 @@ public final class DungeonSessionManager {
         }
 
         boolean changed = session.get().registerParticipant(playerId);
+
+        if (changed) {
+            data.markSessionsDirty();
+        }
+
+        return changed;
+    }
+
+    public static boolean registerPhysicalParticipant(
+            ServerLevel dungeonLevel,
+            DungeonInstanceId instanceId,
+            UUID playerId
+    ) {
+        DungeonManagerSavedData data = DungeonManagerSavedData.get(dungeonLevel);
+        Optional<DungeonSession> session = data.findSessionByInstance(instanceId);
+
+        if (session.isEmpty()) {
+            return false;
+        }
+
+        boolean changed = session.get().registerPhysicalParticipant(playerId);
 
         if (changed) {
             data.markSessionsDirty();
@@ -424,6 +476,10 @@ public final class DungeonSessionManager {
         );
 
         cleanupSession(dungeonLevel, session);
+        DungeonRuntimeArtifactCleanupService.cleanupInstanceArtifacts(
+                dungeonLevel,
+                session.instanceId()
+        );
 
         DungeonInstanceService.retireRuntimeInstance(
                 dungeonLevel,

@@ -17,9 +17,10 @@ public final class DungeonRaidPlayers {
             DungeonInstance instance
     ) {
         return dungeonLevel.players().stream()
-                .filter(player -> DungeonPlayerIdentity.isActiveParticipantOf(
+                .filter(player -> DungeonPlayerIdentity.isActivePhysicalParticipantOf(
+                        dungeonLevel,
                         player,
-                        instance.id()
+                        instance
                 ))
                 .toList();
     }
@@ -40,10 +41,12 @@ public final class DungeonRaidPlayers {
     /*
      * Temporary implementation note:
      *
-     * Previously this class used DungeonRegionIndex.findOwner(player.blockPosition())
-     * as the membership test. That is fragile because position is not identity.
+     * Player encounter participation is physical-presence based. The dark-forest
+     * design allows players to walk into another active dungeon territory inside
+     * the dungeon dimension without using that player's portal.
      *
-     * Keep spatial validation only for correction/debugging. Raid participation
-     * should be based on PlayerDungeonData.currentInstanceId.
+     * This does not change portal access, return bindings, or difficulty.
+     * DungeonSpatialIndex remains a lookup service; DungeonSession records the
+     * runtime presence state used by encounter systems.
      */
 }

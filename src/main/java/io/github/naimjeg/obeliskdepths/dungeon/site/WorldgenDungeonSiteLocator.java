@@ -20,6 +20,11 @@ public final class WorldgenDungeonSiteLocator {
      * Valid source:
      *   vanilla StructureStart + serialized ObeliskDungeonPiece metadata
      *
+     * Requirement:
+     *   nearby chunks must exist far enough for vanilla worldgen to produce the
+     *   StructureStart. Debug warmup commands may load/generate chunks, but this
+     *   runtime lookup deliberately does not.
+     *
      * Invalid source:
      *   deterministic prototype planner
      *   guessed room layout

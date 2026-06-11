@@ -2,6 +2,7 @@ package io.github.naimjeg.obeliskdepths.block;
 
 import com.mojang.serialization.MapCodec;
 import io.github.naimjeg.obeliskdepths.dungeon.interaction.ObeliskInteractionHandler;
+import io.github.naimjeg.obeliskdepths.menu.ObeliskPortalMenu;
 import io.github.naimjeg.obeliskdepths.registry.ModDimensions;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -10,8 +11,10 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.ContainerLevelAccess;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.Level;
@@ -93,27 +96,24 @@ public class ObeliskBlock extends Block {
 
         if (level.dimension().equals(ModDimensions.OBELISK_DEPTHS_LEVEL)) {
             serverPlayer.sendOverlayMessage(
-                    Component.literal("Obelisks cannot be used inside the dungeon.")
-            );
-            return InteractionResult.FAIL;
-        }
-
-        ServerLevel targetLevel = serverPlayer.level()
-                .getServer()
-                .getLevel(ModDimensions.OBELISK_DEPTHS_LEVEL);
-
-        if (targetLevel == null) {
-            serverPlayer.sendOverlayMessage(
-                    Component.literal("ObeliskDepths dimension was not found.")
+                    Component.translatable("message.obeliskdepths.obelisk.inside_dungeon_denied")
             );
             return InteractionResult.FAIL;
         }
 
         BlockPos bottomPos = this.getBottomPos(pos, state);
 
-        boolean success = ObeliskInteractionHandler.activate(serverPlayer, targetLevel, bottomPos);
+        serverPlayer.openMenu(new SimpleMenuProvider(
+                (containerId, inventory, opener) -> new ObeliskPortalMenu(
+                        containerId,
+                        inventory,
+                        ContainerLevelAccess.create(level, bottomPos),
+                        bottomPos
+                ),
+                Component.translatable("container.obeliskdepths.obelisk_portal")
+        ));
 
-        return success ? InteractionResult.SUCCESS_SERVER : InteractionResult.FAIL;
+        return InteractionResult.SUCCESS_SERVER;
     }
 
     @Override

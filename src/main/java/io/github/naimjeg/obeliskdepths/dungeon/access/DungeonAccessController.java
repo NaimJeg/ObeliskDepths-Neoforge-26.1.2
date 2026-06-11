@@ -11,6 +11,15 @@ public final class DungeonAccessController {
     private DungeonAccessController() {
     }
 
+    /*
+     * Portal-only access controller.
+     *
+     * This answers whether a player may enter through this portal session. It
+     * must not decide whether a player can physically enter a dungeon territory
+     * from inside the dungeon dimension. The dark-forest/open-presence rule is
+     * handled by DungeonPhysicalPresenceService and does not recalculate
+     * difficulty or reinterpret portal access modes.
+     */
     public static DungeonAccessResult canEnter(
             UUID playerId,
             PortalSession session,
@@ -32,8 +41,8 @@ public final class DungeonAccessController {
 
         int maxParticipants = session.accessMode() == DungeonAccessMode.SOLO ? 1 : 4;
 
-        if (!instance.isParticipant(playerId)
-                && instance.participants().size() >= maxParticipants) {
+        if (!session.isParticipant(playerId)
+                && session.participants().size() >= maxParticipants) {
             return DungeonAccessResult.DENY_MAX_PARTICIPANTS;
         }
 

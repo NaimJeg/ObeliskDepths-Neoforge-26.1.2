@@ -7,6 +7,15 @@ import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomType;
 import io.github.naimjeg.obeliskdepths.dungeon.territory.DungeonBounds;
 import net.minecraft.core.BlockPos;
 
+/*
+ * Authoritative room metadata projected from generated ObeliskDungeonPiece data.
+ *
+ * Runtime systems should consume these ids/types/bounds/anchors for rooms,
+ * raids, rewards, and debug commands. Runtime must not reconstruct room bounds
+ * from a planner when creating real dungeon instances. The current flat planes
+ * are temporary geometry; this metadata is the stable contract that future .nbt
+ * template placement must preserve.
+ */
 public record DungeonGeneratedRoom(
         DungeonRoomId id,
         DungeonRoomType type,
