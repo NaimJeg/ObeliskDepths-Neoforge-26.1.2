@@ -113,53 +113,122 @@ public final class ObeliskDungeonLayoutValidator {
         for (SolvedDungeonCorridor corridor : layout.corridors()) {
             SolvedDungeonRoom from = layout.room(corridor.spec().fromRoomId());
             SolvedDungeonRoom to = layout.room(corridor.spec().toRoomId());
-            SolvedDungeonRoom left = from.bounds().minX() <= to.bounds().minX() ? from : to;
-            SolvedDungeonRoom right = left == from ? to : from;
 
-            int expectedCorridorMinX = left.bounds().maxX() + 1;
-            int expectedRightRoomMinX = corridor.bounds().maxX() + 1;
-
-            ObeliskDepths.LOGGER.debug(
-                    "[OD layout] adjacency {}.maxX + 1 == {}.minX -> {} == {}",
-                    left.spec().id(),
-                    corridor.spec().id(),
-                    expectedCorridorMinX,
-                    corridor.bounds().minX()
-            );
-            ObeliskDepths.LOGGER.debug(
-                    "[OD layout] adjacency {}.maxX + 1 == {}.minX -> {} == {}",
-                    corridor.spec().id(),
-                    right.spec().id(),
-                    expectedRightRoomMinX,
-                    right.bounds().minX()
-            );
-
-            if (expectedCorridorMinX != corridor.bounds().minX()) {
-                throw new IllegalStateException(
-                        "Dungeon corridor is not adjacent to left room: corridor="
-                                + corridor.spec().id()
-                                + " room="
-                                + left.spec().id()
-                                + " roomBounds="
-                                + left.bounds()
-                                + " corridorBounds="
-                                + corridor.bounds()
-                );
+            if (separatedOnX(from, to)) {
+                validateXAdjacency(corridor, from, to);
+                continue;
             }
 
-            if (expectedRightRoomMinX != right.bounds().minX()) {
-                throw new IllegalStateException(
-                        "Dungeon corridor is not adjacent to right room: corridor="
-                                + corridor.spec().id()
-                                + " room="
-                                + right.spec().id()
-                                + " roomBounds="
-                                + right.bounds()
-                                + " corridorBounds="
-                                + corridor.bounds()
-                );
+            if (separatedOnZ(from, to)) {
+                validateZAdjacency(corridor, from, to);
+                continue;
             }
+
+            throw new IllegalStateException(
+                    "Dungeon corridor endpoints are not separated by a clear X/Z gap: corridor="
+                            + corridor.spec().id()
+                            + " from="
+                            + from.bounds()
+                            + " to="
+                            + to.bounds()
+            );
         }
+    }
+
+    private static void validateXAdjacency(
+            SolvedDungeonCorridor corridor,
+            SolvedDungeonRoom from,
+            SolvedDungeonRoom to
+    ) {
+        SolvedDungeonRoom left = from.bounds().minX() <= to.bounds().minX() ? from : to;
+        SolvedDungeonRoom right = left == from ? to : from;
+        int expectedCorridorMinX = left.bounds().maxX() + 1;
+        int expectedRightRoomMinX = corridor.bounds().maxX() + 1;
+
+        ObeliskDepths.LOGGER.debug(
+                "[OD layout] adjacency {}.maxX + 1 == {}.minX -> {} == {}",
+                left.spec().id(),
+                corridor.spec().id(),
+                expectedCorridorMinX,
+                corridor.bounds().minX()
+        );
+        ObeliskDepths.LOGGER.debug(
+                "[OD layout] adjacency {}.maxX + 1 == {}.minX -> {} == {}",
+                corridor.spec().id(),
+                right.spec().id(),
+                expectedRightRoomMinX,
+                right.bounds().minX()
+        );
+
+        if (expectedCorridorMinX != corridor.bounds().minX()
+                || expectedRightRoomMinX != right.bounds().minX()) {
+            throw new IllegalStateException(
+                    "Dungeon X corridor is not boundary-adjacent: corridor="
+                            + corridor.spec().id()
+                            + " left="
+                            + left.bounds()
+                            + " corridor="
+                            + corridor.bounds()
+                            + " right="
+                            + right.bounds()
+            );
+        }
+    }
+
+    private static void validateZAdjacency(
+            SolvedDungeonCorridor corridor,
+            SolvedDungeonRoom from,
+            SolvedDungeonRoom to
+    ) {
+        SolvedDungeonRoom north = from.bounds().minZ() <= to.bounds().minZ() ? from : to;
+        SolvedDungeonRoom south = north == from ? to : from;
+        int expectedCorridorMinZ = north.bounds().maxZ() + 1;
+        int expectedSouthRoomMinZ = corridor.bounds().maxZ() + 1;
+
+        ObeliskDepths.LOGGER.debug(
+                "[OD layout] adjacency {}.maxZ + 1 == {}.minZ -> {} == {}",
+                north.spec().id(),
+                corridor.spec().id(),
+                expectedCorridorMinZ,
+                corridor.bounds().minZ()
+        );
+        ObeliskDepths.LOGGER.debug(
+                "[OD layout] adjacency {}.maxZ + 1 == {}.minZ -> {} == {}",
+                corridor.spec().id(),
+                south.spec().id(),
+                expectedSouthRoomMinZ,
+                south.bounds().minZ()
+        );
+
+        if (expectedCorridorMinZ != corridor.bounds().minZ()
+                || expectedSouthRoomMinZ != south.bounds().minZ()) {
+            throw new IllegalStateException(
+                    "Dungeon Z corridor is not boundary-adjacent: corridor="
+                            + corridor.spec().id()
+                            + " north="
+                            + north.bounds()
+                            + " corridor="
+                            + corridor.bounds()
+                            + " south="
+                            + south.bounds()
+            );
+        }
+    }
+
+    private static boolean separatedOnX(
+            SolvedDungeonRoom first,
+            SolvedDungeonRoom second
+    ) {
+        return first.bounds().maxX() < second.bounds().minX()
+                || second.bounds().maxX() < first.bounds().minX();
+    }
+
+    private static boolean separatedOnZ(
+            SolvedDungeonRoom first,
+            SolvedDungeonRoom second
+    ) {
+        return first.bounds().maxZ() < second.bounds().minZ()
+                || second.bounds().maxZ() < first.bounds().minZ();
     }
 
     private static boolean intersects(BoundingBox first, BoundingBox second) {

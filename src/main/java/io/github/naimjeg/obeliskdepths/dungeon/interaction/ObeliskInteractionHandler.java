@@ -91,12 +91,13 @@ public final class ObeliskInteractionHandler {
 
         try {
             /*
-             * Keep the existing runtime model.
+             * This reserves an authoritative worldgen dungeon site in the ObeliskDepths
+             * dimension. The caller must pass ModDimensions.OBELISK_DEPTHS_LEVEL here,
+             * not the player's current overworld level.
              *
-             * This reserves an authoritative worldgen dungeon site. Do not replace
-             * this with a fake/prototype lookup, and do not add a separate preload
-             * transport path here. The actual chunk generation/loading should still
-             * be triggered by the real player teleport below in enterTarget(...).
+             * Do not replace this with prototype metadata. If no generated site is found,
+             * the fix is dimension/structure/chunk-generation diagnostics, not fake runtime
+             * reservation.
              */
             Optional<DungeonInstance> createdInstance =
                     DungeonInstanceService.reserveNearestUnreachedWorldgenSite(

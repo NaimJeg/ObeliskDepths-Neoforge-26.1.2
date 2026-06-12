@@ -125,7 +125,8 @@ public class ObeliskPortalMenu extends AbstractContainerMenu {
             return true;
         }
 
-        ServerLevel dungeonLevel = serverPlayer.level();
+        ServerLevel dungeonLevel = serverPlayer.level().getServer()
+                .getLevel(ModDimensions.OBELISK_DEPTHS_LEVEL);
 
         if (dungeonLevel == null) {
             this.fail(serverPlayer, Component.translatable(

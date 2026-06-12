@@ -1,0 +1,103 @@
+package io.github.naimjeg.obeliskdepths.worldgen.structure.layout;
+
+import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomType;
+import java.util.EnumSet;
+import net.minecraft.core.BlockPos;
+
+public record DungeonLayoutNode(
+        String roomId,
+        DungeonRoomType type,
+        DungeonCellPos cellOrigin,
+        DungeonRoomFootprint footprint,
+        EnumSet<DungeonConnectorSide> connectorSides,
+        boolean criticalPath,
+        boolean branchCap
+) {
+    public DungeonLayoutNode {
+        if (roomId == null || roomId.isBlank()) {
+            throw new IllegalArgumentException("Layout node room id must be non-empty");
+        }
+
+        if (type == null) {
+            throw new IllegalArgumentException("Layout node type must be present: " + roomId);
+        }
+
+        if (footprint == null) {
+            throw new IllegalArgumentException("Layout node footprint must be present: " + roomId);
+        }
+
+        if (cellOrigin == null) {
+            throw new IllegalArgumentException("Layout node cell origin must be present: " + roomId);
+        }
+
+        connectorSides = connectorSides == null
+                ? EnumSet.noneOf(DungeonConnectorSide.class)
+                : EnumSet.copyOf(connectorSides);
+
+        if (connectorSides.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Layout node connectors must be non-empty for " + roomId
+            );
+        }
+
+        if (branchCap && connectorSides.size() != 1) {
+            throw new IllegalArgumentException(
+                    "Branch cap nodes must have exactly one connector: " + roomId
+            );
+        }
+    }
+
+    public DungeonConnectorShapeType connectorShapeType() {
+        return DungeonConnectorShapeType.fromSides(this.connectorSides);
+    }
+
+    public int minGridX() {
+        return this.cellOrigin.x();
+    }
+
+    public int minGridY() {
+        return this.cellOrigin.y();
+    }
+
+    public int minGridZ() {
+        return this.cellOrigin.z();
+    }
+
+    public int maxGridXExclusive() {
+        return this.cellOrigin.x() + this.footprint.widthCells();
+    }
+
+    public int maxGridYExclusive() {
+        return this.cellOrigin.y() + this.footprint.heightCells();
+    }
+
+    public int maxGridZExclusive() {
+        return this.cellOrigin.z() + this.footprint.depthCells();
+    }
+
+    public boolean intersects(DungeonLayoutNode other) {
+        return this.cellBox().intersects(other.cellBox());
+    }
+
+    public DungeonCellBox cellBox() {
+        return this.footprint.toCellBox(this.cellOrigin);
+    }
+
+    public BlockPos blockOrigin(BlockPos layoutOrigin) {
+        return layoutOrigin.offset(
+                this.cellOrigin.x() * DungeonLayoutConstants.CELL_SIZE_X,
+                this.cellOrigin.y() * DungeonLayoutConstants.CELL_SIZE_Y,
+                this.cellOrigin.z() * DungeonLayoutConstants.CELL_SIZE_Z
+        );
+    }
+
+    public BlockPos blockAnchor(BlockPos layoutOrigin) {
+        BlockPos origin = this.blockOrigin(layoutOrigin);
+
+        return origin.offset(
+                this.footprint.widthBlocks() / 2,
+                1,
+                this.footprint.depthBlocks() / 2
+        );
+    }
+}

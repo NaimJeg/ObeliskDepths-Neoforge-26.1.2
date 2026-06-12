@@ -5,13 +5,18 @@ import io.github.naimjeg.obeliskdepths.block.GreatSwampVineBlock;
 import io.github.naimjeg.obeliskdepths.block.GreatSwampVinePlantBlock;
 import io.github.naimjeg.obeliskdepths.block.ObeliskBlock;
 import io.github.naimjeg.obeliskdepths.block.ObeliskSmithingTableBlock;
+import io.github.naimjeg.obeliskdepths.block.StrippableRotatedPillarBlock;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.item.BlockItem;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.SoundType;
+import net.minecraft.world.item.HangingSignItem;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.SignItem;
+import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.block.state.properties.BlockSetType;
+import net.minecraft.world.level.block.state.properties.WoodType;
 import net.minecraft.world.level.material.PushReaction;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.registries.DeferredBlock;
@@ -20,6 +25,7 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 
 import java.util.List;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
 public final class ModBlocks {
     private ModBlocks() {
@@ -33,6 +39,11 @@ public final class ModBlocks {
 
     private static final float UNBREAKABLE_HARDNESS = -1.0F;
     private static final float UNBREAKABLE_RESISTANCE = 3600000.0F;
+    private static final float WOOD_HARDNESS = 2.0F;
+    private static final float WOOD_RESISTANCE = 3.0F;
+    private static final float LEAVES_HARDNESS = 0.2F;
+    private static final float ROOT_TANGLE_HARDNESS = 1.5F;
+    private static final float ROOT_TANGLE_RESISTANCE = 3.0F;
 
     public static final DeferredRegister.Blocks BLOCKS =
             DeferredRegister.createBlocks(ObeliskDepths.MOD_ID);
@@ -70,11 +81,44 @@ public final class ModBlocks {
     // Dungeon stone set
     // ---------------------------------------------------------------------
 
-    public static final DeferredBlock<Block> DUNGEON_STONE =
-            registerStoneBlock("dungeon_stone", OBSIDIAN_HARDNESS, OBSIDIAN_RESISTANCE);
+    public static final StoneBlockSet DUNGEON_STONE_SET =
+            registerStoneSet("dungeon_stone", OBSIDIAN_HARDNESS, OBSIDIAN_RESISTANCE);
 
-    public static final DeferredItem<BlockItem> DUNGEON_STONE_ITEM =
-            registerBlockItem(DUNGEON_STONE);
+    public static final StoneBlockSet DUNGEON_BRICKS_SET =
+            registerStoneSet("dungeon_bricks", OBSIDIAN_PLUS_HARDNESS, OBSIDIAN_PLUS_RESISTANCE);
+
+    public static final StoneBlockSet DUNGEON_TILES_SET =
+            registerStoneSet("dungeon_tiles", OBSIDIAN_HARDNESS, OBSIDIAN_RESISTANCE);
+
+    public static final DeferredBlock<Block> DUNGEON_STONE = DUNGEON_STONE_SET.base();
+    //public static final DeferredItem<BlockItem> DUNGEON_STONE_ITEM = DUNGEON_STONE_SET.baseItem();
+    public static final DeferredBlock<Block> DUNGEON_BRICKS = DUNGEON_BRICKS_SET.base();
+    //public static final DeferredItem<BlockItem> DUNGEON_BRICKS_ITEM = DUNGEON_BRICKS_SET.baseItem();
+
+    public static final DeferredBlock<Block> DUNGEON_TILES = DUNGEON_TILES_SET.base();
+    public static final DeferredItem<BlockItem> DUNGEON_TILES_ITEM = DUNGEON_TILES_SET.baseItem();
+//    public static final DeferredBlock<Block> DUNGEON_TILES =
+//            registerStoneBlock("dungeon_tiles", OBSIDIAN_PLUS_HARDNESS, OBSIDIAN_PLUS_RESISTANCE);
+//
+//    public static final DeferredItem<BlockItem> DUNGEON_TILES_ITEM =
+//            registerBlockItem(DUNGEON_TILES);
+
+    public static final List<StoneBlockSet> STONE_BLOCK_SETS =
+            List.of(
+                    DUNGEON_STONE_SET,
+                    DUNGEON_BRICKS_SET,
+                    DUNGEON_TILES_SET
+            );
+
+    public static final List<DeferredBlock<? extends Block>> STONE_SET_BLOCKS =
+            STONE_BLOCK_SETS.stream()
+                    .flatMap(set -> set.blocks().stream())
+                    .toList();
+
+    public static final List<DeferredItem<? extends BlockItem>> STONE_SET_ITEMS =
+            STONE_BLOCK_SETS.stream()
+                    .flatMap(set -> set.items().stream())
+                    .toList();
 
     public static final DeferredBlock<Block> REINFORCED_DUNGEON_STONE =
             registerStoneBlock("reinforced_dungeon_stone", UNBREAKABLE_HARDNESS, UNBREAKABLE_RESISTANCE);
@@ -82,17 +126,7 @@ public final class ModBlocks {
     public static final DeferredItem<BlockItem> REINFORCED_DUNGEON_STONE_ITEM =
             registerBlockItem(REINFORCED_DUNGEON_STONE);
 
-    public static final DeferredBlock<Block> DUNGEON_BRICKS =
-            registerStoneBlock("dungeon_bricks", OBSIDIAN_PLUS_HARDNESS, OBSIDIAN_PLUS_RESISTANCE);
 
-    public static final DeferredItem<BlockItem> DUNGEON_BRICKS_ITEM =
-            registerBlockItem(DUNGEON_BRICKS);
-
-    public static final DeferredBlock<Block> DUNGEON_TILES =
-            registerStoneBlock("dungeon_tiles", OBSIDIAN_PLUS_HARDNESS, OBSIDIAN_PLUS_RESISTANCE);
-
-    public static final DeferredItem<BlockItem> DUNGEON_TILES_ITEM =
-            registerBlockItem(DUNGEON_TILES);
 
     public static final DeferredBlock<Block> DUNGEON_CRACKED_TILES =
             registerStoneBlock("dungeon_cracked_tiles", OBSIDIAN_PLUS_HARDNESS, OBSIDIAN_PLUS_RESISTANCE);
@@ -151,7 +185,7 @@ public final class ModBlocks {
             Block::new
     );
 
-    public static final DeferredItem<BlockItem> GREAT_WAMP_DIRT_ITEM =
+    public static final DeferredItem<BlockItem> GREAT_SWAMP_DIRT_ITEM =
             registerBlockItem(GREAT_SWAMP_DIRT);
 
     public static final DeferredBlock<Block> GREAT_SWAMP_ROOTED_DIRT = registerBlock(
@@ -177,6 +211,38 @@ public final class ModBlocks {
 
     public static final DeferredItem<BlockItem> GREAT_SWAMP_VINE_ITEM =
             registerBlockItem(GREAT_SWAMP_VINES);
+
+    public static final WoodBlockSet GREAT_SWAMP_TAXODIUM =
+            registerWoodSet(
+                    "great_swamp_taxodium",
+                    ModWoodTypes.GREAT_SWAMP_TAXODIUM,
+                    ModWoodTypes.GREAT_SWAMP_TAXODIUM_SET
+            );
+
+    public static final List<WoodBlockSet> WOOD_BLOCK_SETS =
+            List.of(GREAT_SWAMP_TAXODIUM);
+
+    public static final List<DeferredBlock<? extends Block>> WOOD_SET_BLOCKS =
+            WOOD_BLOCK_SETS.stream()
+                    .flatMap(set -> set.blocks().stream())
+                    .toList();
+
+    public static final List<DeferredItem<? extends Item>> WOOD_SET_ITEMS =
+            WOOD_BLOCK_SETS.stream()
+                    .flatMap(set -> set.items().stream())
+                    .toList();
+
+    public static final DeferredBlock<Block> GREAT_SWAMP_TAXODIUM_ROOT_TANGLE =
+            registerBlock(
+                    "great_swamp_taxodium_root_tangle",
+                    ROOT_TANGLE_HARDNESS,
+                    ROOT_TANGLE_RESISTANCE,
+                    SoundType.ROOTED_DIRT,
+                    Block::new
+            );
+
+    public static final DeferredItem<BlockItem> GREAT_SWAMP_TAXODIUM_ROOT_TANGLE_ITEM =
+            registerBlockItem(GREAT_SWAMP_TAXODIUM_ROOT_TANGLE);
 
     // ---------------------------------------------------------------------
     // Dungeon decoration
@@ -245,41 +311,46 @@ public final class ModBlocks {
      * usually need special drop behavior.
      */
     public static final List<DeferredBlock<? extends Block>> SELF_DROPPING_BLOCKS =
-            List.of(
-                    //OBELISK,
-                    OBELISK_SMITHING_TABLE,
-                    DUNGEON_STONE,
-                    REINFORCED_DUNGEON_STONE,
-                    DUNGEON_BRICKS,
-                    DUNGEON_TILES,
-                    DUNGEON_CRACKED_TILES,
-                    DUNGEON_CRACKED_BRICKS,
-                    GREAT_SWAMP_GRASS_BLOCK,
-                    GREAT_SWAMP_COARSE_DIRT,
-                    GREAT_SWAMP_MUD,
-                    GREAT_SWAMP_DIRT,
-                    GREAT_SWAMP_ROOTED_DIRT,
-                    DUNGEON_LAMP
-            );
+            Stream.concat(
+                    STONE_SET_BLOCKS.stream(),
+                    List.<DeferredBlock<? extends Block>>of(
+                            // OBELISK intentionally excluded.
+                            OBELISK_SMITHING_TABLE,
+                            REINFORCED_DUNGEON_STONE,
+                            DUNGEON_CRACKED_TILES,
+                            DUNGEON_CRACKED_BRICKS,
+                            GREAT_SWAMP_GRASS_BLOCK,
+                            GREAT_SWAMP_COARSE_DIRT,
+                            GREAT_SWAMP_MUD,
+                            GREAT_SWAMP_DIRT,
+                            GREAT_SWAMP_ROOTED_DIRT,
+                            GREAT_SWAMP_TAXODIUM_ROOT_TANGLE,
+                            DUNGEON_LAMP
+                    ).stream()
+            ).toList();
 
-    public static final List<DeferredItem<? extends BlockItem>> BUILDING_BLOCK_ITEMS =
-            List.of(
-                    OBELISK_ITEM,
-                    OBELISK_SMITHING_TABLE_ITEM,
-                    DUNGEON_STONE_ITEM,
-                    REINFORCED_DUNGEON_STONE_ITEM,
-                    DUNGEON_BRICKS_ITEM,
-                    DUNGEON_TILES_ITEM,
-                    DUNGEON_CRACKED_TILES_ITEM,
-                    DUNGEON_CRACKED_BRICKS_ITEM,
-                    GREAT_SWAMP_COARSE_DIRT_ITEM,
-                    GREAT_SWAMP_GRASS_BLOCK_ITEM,
-                    GREAT_SWAMP_MUD_ITEM,
-                    GREAT_WAMP_DIRT_ITEM,
-                    GREAT_SWAMP_ROOTED_DIRT_ITEM,
-                    GREAT_SWAMP_VINE_ITEM,
-                    DUNGEON_LAMP_ITEM
-            );
+    public static final List<DeferredItem<? extends Item>> BUILDING_BLOCK_ITEMS =
+            Stream.concat(
+                    Stream.concat(
+                            STONE_SET_ITEMS.stream(),
+                            WOOD_SET_ITEMS.stream()
+                    ),
+                    List.<DeferredItem<? extends Item>>of(
+                            OBELISK_ITEM,
+                            OBELISK_SMITHING_TABLE_ITEM,
+                            REINFORCED_DUNGEON_STONE_ITEM,
+                            DUNGEON_CRACKED_TILES_ITEM,
+                            DUNGEON_CRACKED_BRICKS_ITEM,
+                            GREAT_SWAMP_COARSE_DIRT_ITEM,
+                            GREAT_SWAMP_GRASS_BLOCK_ITEM,
+                            GREAT_SWAMP_MUD_ITEM,
+                            GREAT_SWAMP_DIRT_ITEM,
+                            GREAT_SWAMP_ROOTED_DIRT_ITEM,
+                            GREAT_SWAMP_VINE_ITEM,
+                            GREAT_SWAMP_TAXODIUM_ROOT_TANGLE_ITEM,
+                            DUNGEON_LAMP_ITEM
+                    ).stream()
+            ).toList();
 
     private static DeferredBlock<Block> registerStoneBlock(
             String name,
@@ -327,10 +398,395 @@ public final class ModBlocks {
         );
     }
 
+    public record StoneBlockSet(
+            DeferredBlock<Block> base,
+            DeferredBlock<SlabBlock> slab,
+            DeferredBlock<StairBlock> stairs,
+            DeferredBlock<WallBlock> wall,
+            DeferredItem<BlockItem> baseItem,
+            DeferredItem<BlockItem> slabItem,
+            DeferredItem<BlockItem> stairsItem,
+            DeferredItem<BlockItem> wallItem
+    ) {
+        public List<DeferredBlock<? extends Block>> blocks() {
+            return List.of(base, slab, stairs, wall);
+        }
+
+        public List<DeferredItem<? extends BlockItem>> items() {
+            return List.of(baseItem, slabItem, stairsItem, wallItem);
+        }
+    }
+
+    private static StoneBlockSet registerStoneSet(
+            String name,
+            float destroyTime,
+            float explosionResistance
+    ) {
+        DeferredBlock<Block> base = registerStoneBlock(
+                name,
+                destroyTime,
+                explosionResistance
+        );
+
+        DeferredBlock<SlabBlock> slab = BLOCKS.register(
+                name + "_slab",
+                registryName -> new SlabBlock(stoneProperties(
+                        registryName,
+                        destroyTime,
+                        explosionResistance
+                ))
+        );
+
+        DeferredBlock<StairBlock> stairs = BLOCKS.register(
+                name + "_stairs",
+                registryName -> new StairBlock(
+                        base.get().defaultBlockState(),
+                        stoneProperties(registryName, destroyTime, explosionResistance)
+                )
+        );
+
+        DeferredBlock<WallBlock> wall = BLOCKS.register(
+                name + "_wall",
+                registryName -> new WallBlock(stoneProperties(
+                        registryName,
+                        destroyTime,
+                        explosionResistance
+                ))
+        );
+
+        return new StoneBlockSet(
+                base,
+                slab,
+                stairs,
+                wall,
+                registerBlockItem(base),
+                registerBlockItem(slab),
+                registerBlockItem(stairs),
+                registerBlockItem(wall)
+        );
+    }
+
+    public record WoodBlockSet(
+            DeferredBlock<StrippableRotatedPillarBlock> log,
+            DeferredBlock<StrippableRotatedPillarBlock> wood,
+            DeferredBlock<RotatedPillarBlock> strippedLog,
+            DeferredBlock<RotatedPillarBlock> strippedWood,
+            DeferredBlock<Block> planks,
+            DeferredBlock<StairBlock> stairs,
+            DeferredBlock<SlabBlock> slab,
+            DeferredBlock<FenceBlock> fence,
+            DeferredBlock<FenceGateBlock> fenceGate,
+            DeferredBlock<DoorBlock> door,
+            DeferredBlock<TrapDoorBlock> trapdoor,
+//            DeferredBlock<PressurePlateBlock> pressurePlate,
+//            DeferredBlock<ButtonBlock> button,
+//            DeferredBlock<StandingSignBlock> sign,
+//            DeferredBlock<WallSignBlock> wallSign,
+//            DeferredBlock<CeilingHangingSignBlock> hangingSign,
+//            DeferredBlock<WallHangingSignBlock> wallHangingSign,
+            DeferredBlock<? extends LeavesBlock> leaves,
+            DeferredItem<BlockItem> logItem,
+            DeferredItem<BlockItem> woodItem,
+            DeferredItem<BlockItem> strippedLogItem,
+            DeferredItem<BlockItem> strippedWoodItem,
+            DeferredItem<BlockItem> planksItem,
+            DeferredItem<BlockItem> stairsItem,
+            DeferredItem<BlockItem> slabItem,
+            DeferredItem<BlockItem> fenceItem,
+            DeferredItem<BlockItem> fenceGateItem,
+            DeferredItem<BlockItem> doorItem,
+            DeferredItem<BlockItem> trapdoorItem,
+//            DeferredItem<BlockItem> pressurePlateItem,
+//            DeferredItem<BlockItem> buttonItem,
+//            DeferredItem<SignItem> signItem,
+//            DeferredItem<HangingSignItem> hangingSignItem,
+            DeferredItem<BlockItem> leavesItem
+    ) {
+        public List<DeferredBlock<? extends Block>> blocks() {
+            return List.of(
+                    log,
+                    wood,
+                    strippedLog,
+                    strippedWood,
+                    planks,
+                    stairs,
+                    slab,
+                    fence,
+                    fenceGate,
+                    door,
+                    trapdoor,
+//                    pressurePlate,
+//                    button,
+//                    sign,
+//                    wallSign,
+//                    hangingSign,
+//                    wallHangingSign,
+                    leaves
+            );
+        }
+
+        public List<DeferredItem<? extends Item>> items() {
+            return List.of(
+                    logItem,
+                    woodItem,
+                    strippedLogItem,
+                    strippedWoodItem,
+                    planksItem,
+                    stairsItem,
+                    slabItem,
+                    fenceItem,
+                    fenceGateItem,
+                    doorItem,
+                    trapdoorItem,
+//                    pressurePlateItem,
+//                    buttonItem,
+//                    signItem,
+//                    hangingSignItem,
+                    leavesItem
+            );
+        }
+
+        public List<DeferredBlock<? extends Block>> logBlocks() {
+            return List.of(log, wood, strippedLog, strippedWood);
+        }
+    }
+
+    private static WoodBlockSet registerWoodSet(
+            String name,
+            WoodType woodType,
+            BlockSetType blockSetType
+    ) {
+        DeferredBlock<RotatedPillarBlock> strippedLog = BLOCKS.register(
+                "stripped_" + name + "_log",
+                registryName -> new RotatedPillarBlock(logProperties(registryName))
+        );
+        DeferredBlock<RotatedPillarBlock> strippedWood = BLOCKS.register(
+                "stripped_" + name + "_wood",
+                registryName -> new RotatedPillarBlock(logProperties(registryName))
+        );
+        DeferredBlock<StrippableRotatedPillarBlock> log = BLOCKS.register(
+                name + "_log",
+                registryName -> new StrippableRotatedPillarBlock(
+                        strippedLog,
+                        logProperties(registryName)
+                )
+        );
+        DeferredBlock<StrippableRotatedPillarBlock> wood = BLOCKS.register(
+                name + "_wood",
+                registryName -> new StrippableRotatedPillarBlock(
+                        strippedWood,
+                        logProperties(registryName)
+                )
+        );
+        DeferredBlock<Block> planks = BLOCKS.register(
+                name + "_planks",
+                registryName -> new Block(woodProperties(registryName))
+        );
+        DeferredBlock<StairBlock> stairs = BLOCKS.register(
+                name + "_stairs",
+                registryName -> new StairBlock(
+                        planks.get().defaultBlockState(),
+                        woodProperties(registryName)
+                )
+        );
+        DeferredBlock<SlabBlock> slab = BLOCKS.register(
+                name + "_slab",
+                registryName -> new SlabBlock(woodProperties(registryName))
+        );
+        DeferredBlock<FenceBlock> fence = BLOCKS.register(
+                name + "_fence",
+                registryName -> new FenceBlock(woodProperties(registryName))
+        );
+        DeferredBlock<FenceGateBlock> fenceGate = BLOCKS.register(
+                name + "_fence_gate",
+                registryName -> new FenceGateBlock(
+                        woodType,
+                        woodProperties(registryName)
+                )
+        );
+        DeferredBlock<DoorBlock> door = BLOCKS.register(
+                name + "_door",
+                registryName -> new DoorBlock(
+                        blockSetType,
+                        woodProperties(registryName).noOcclusion()
+                )
+        );
+        DeferredBlock<TrapDoorBlock> trapdoor = BLOCKS.register(
+                name + "_trapdoor",
+                registryName -> new TrapDoorBlock(
+                        blockSetType,
+                        woodProperties(registryName).noOcclusion()
+                )
+        );
+//        DeferredBlock<PressurePlateBlock> pressurePlate = BLOCKS.register(
+//                name + "_pressure_plate",
+//                registryName -> new PressurePlateBlock(
+//                        blockSetType,
+//                        woodProperties(registryName)
+//                )
+//        );
+//        DeferredBlock<ButtonBlock> button = BLOCKS.register(
+//                name + "_button",
+//                registryName -> new ButtonBlock(
+//                        blockSetType,
+//                        30,
+//                        woodProperties(registryName).noCollision()
+//                )
+//        );
+//        DeferredBlock<StandingSignBlock> sign = BLOCKS.register(
+//                name + "_sign",
+//                registryName -> new StandingSignBlock(
+//                        woodType,
+//                        signProperties(registryName)
+//                )
+//        );
+//        DeferredBlock<WallSignBlock> wallSign = BLOCKS.register(
+//                name + "_wall_sign",
+//                registryName -> new WallSignBlock(
+//                        woodType,
+//                        signProperties(registryName)
+//                )
+//        );
+//        DeferredBlock<CeilingHangingSignBlock> hangingSign = BLOCKS.register(
+//                name + "_hanging_sign",
+//                registryName -> new CeilingHangingSignBlock(
+//                        woodType,
+//                        signProperties(registryName)
+//                )
+//        );
+//        DeferredBlock<WallHangingSignBlock> wallHangingSign = BLOCKS.register(
+//                name + "_wall_hanging_sign",
+//                registryName -> new WallHangingSignBlock(
+//                        woodType,
+//                        signProperties(registryName)
+//                )
+//        );
+        DeferredBlock<TintedParticleLeavesBlock> leaves = BLOCKS.register(
+                name + "_leaves",
+                registryName -> new TintedParticleLeavesBlock(
+                        0.01F,
+                        leavesProperties(registryName)
+                )
+        );
+
+        return new WoodBlockSet(
+                log,
+                wood,
+                strippedLog,
+                strippedWood,
+                planks,
+                stairs,
+                slab,
+                fence,
+                fenceGate,
+                door,
+                trapdoor,
+//                pressurePlate,
+//                button,
+//                sign,
+//                wallSign,
+//                hangingSign,
+//                wallHangingSign,
+                leaves,
+                registerBlockItem(log),
+                registerBlockItem(wood),
+                registerBlockItem(strippedLog),
+                registerBlockItem(strippedWood),
+                registerBlockItem(planks),
+                registerBlockItem(stairs),
+                registerBlockItem(slab),
+                registerBlockItem(fence),
+                registerBlockItem(fenceGate),
+                registerBlockItem(door),
+                registerBlockItem(trapdoor),
+//                registerBlockItem(pressurePlate),
+//                registerBlockItem(button),
+//                registerSignItem(name + "_sign", sign, wallSign),
+//                registerHangingSignItem(name + "_hanging_sign", hangingSign, wallHangingSign),
+                registerBlockItem(leaves)
+        );
+    }
+
+    private static BlockBehaviour.Properties logProperties(Identifier registryName) {
+        return baseProperties(
+                registryName,
+                WOOD_HARDNESS,
+                WOOD_RESISTANCE,
+                SoundType.WOOD
+        ).ignitedByLava();
+    }
+
+    private static BlockBehaviour.Properties woodProperties(Identifier registryName) {
+        return baseProperties(
+                registryName,
+                WOOD_HARDNESS,
+                WOOD_RESISTANCE,
+                SoundType.WOOD
+        ).ignitedByLava();
+    }
+
+    private static BlockBehaviour.Properties signProperties(Identifier registryName) {
+        return baseProperties(
+                registryName,
+                1.0F,
+                1.0F,
+                SoundType.WOOD
+        )
+                .noCollision()
+                .ignitedByLava();
+    }
+
+    private static BlockBehaviour.Properties leavesProperties(Identifier registryName) {
+        return baseProperties(
+                registryName,
+                LEAVES_HARDNESS,
+                LEAVES_HARDNESS,
+                SoundType.GRASS
+        )
+                .randomTicks()
+                .noOcclusion()
+                .ignitedByLava()
+                .pushReaction(PushReaction.DESTROY);
+    }
+
     private static <T extends Block> DeferredItem<BlockItem> registerBlockItem(
             DeferredBlock<T> block
     ) {
         return ITEMS.registerSimpleBlockItem(block);
+    }
+
+    private static DeferredItem<SignItem> registerSignItem(
+            String name,
+            DeferredBlock<? extends Block> sign,
+            DeferredBlock<? extends Block> wallSign
+    ) {
+        return ITEMS.register(
+                name,
+                registryName -> new SignItem(
+                        sign.get(),
+                        wallSign.get(),
+                        new Item.Properties()
+                                .setId(itemKey(registryName))
+                                .stacksTo(16)
+                )
+        );
+    }
+
+    private static DeferredItem<HangingSignItem> registerHangingSignItem(
+            String name,
+            DeferredBlock<? extends Block> hangingSign,
+            DeferredBlock<? extends Block> wallHangingSign
+    ) {
+        return ITEMS.register(
+                name,
+                registryName -> new HangingSignItem(
+                        hangingSign.get(),
+                        wallHangingSign.get(),
+                        new Item.Properties()
+                                .setId(itemKey(registryName))
+                                .stacksTo(16)
+                )
+        );
     }
 
     private static BlockBehaviour.Properties baseProperties(
@@ -348,6 +804,10 @@ public final class ModBlocks {
 
     private static ResourceKey<Block> blockKey(Identifier registryName) {
         return ResourceKey.create(Registries.BLOCK, registryName);
+    }
+
+    private static ResourceKey<Item> itemKey(Identifier registryName) {
+        return ResourceKey.create(Registries.ITEM, registryName);
     }
 
     public static void register(IEventBus eventBus) {

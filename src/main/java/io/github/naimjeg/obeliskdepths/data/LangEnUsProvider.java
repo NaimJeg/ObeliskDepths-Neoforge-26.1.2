@@ -73,10 +73,11 @@ public final class LangEnUsProvider extends LanguageProvider {
         addGeneratedBlock(ModBlocks.OBELISK);
         addGeneratedBlock(ModBlocks.OBELISK_SMITHING_TABLE);
 
-        addGeneratedBlock(ModBlocks.DUNGEON_STONE);
+        ModBlocks.STONE_BLOCK_SETS.forEach(set ->
+                set.blocks().forEach(this::addGeneratedBlock)
+        );
+
         addGeneratedBlock(ModBlocks.REINFORCED_DUNGEON_STONE);
-        addGeneratedBlock(ModBlocks.DUNGEON_BRICKS);
-        addGeneratedBlock(ModBlocks.DUNGEON_TILES);
         addGeneratedBlock(ModBlocks.DUNGEON_CRACKED_TILES);
         addGeneratedBlock(ModBlocks.DUNGEON_CRACKED_BRICKS);
 
@@ -86,6 +87,12 @@ public final class LangEnUsProvider extends LanguageProvider {
         addGeneratedBlock(ModBlocks.GREAT_SWAMP_DIRT);
         addGeneratedBlock(ModBlocks.GREAT_SWAMP_ROOTED_DIRT);
         addGeneratedBlock(ModBlocks.GREAT_SWAMP_VINES);
+        ModBlocks.WOOD_BLOCK_SETS.forEach(set -> {
+            set.blocks().forEach(this::addGeneratedBlock);
+//            addGeneratedItem(set.signItem());
+//            addGeneratedItem(set.hangingSignItem());
+        });
+        addGeneratedBlock(ModBlocks.GREAT_SWAMP_TAXODIUM_ROOT_TANGLE);
 
         addGeneratedBlock(ModBlocks.DUNGEON_LAMP);
     }

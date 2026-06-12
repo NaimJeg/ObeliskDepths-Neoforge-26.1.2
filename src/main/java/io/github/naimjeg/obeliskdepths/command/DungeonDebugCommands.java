@@ -2,6 +2,7 @@ package io.github.naimjeg.obeliskdepths.command;
 
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import io.github.naimjeg.obeliskdepths.dungeon.completion.DungeonCompletionResult;
 import io.github.naimjeg.obeliskdepths.dungeon.completion.DungeonCompletionService;
@@ -28,6 +29,14 @@ import io.github.naimjeg.obeliskdepths.dungeon.site.ResolvedDungeonSite;
 import io.github.naimjeg.obeliskdepths.dungeon.state.DungeonManagerSavedData;
 import io.github.naimjeg.obeliskdepths.registry.ModDimensions;
 import io.github.naimjeg.obeliskdepths.world.ObeliskDepthsTeleporter;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonCellBox;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutConstants;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutGenerationProfile;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutNode;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutPlan;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.PreliminaryDungeonLayoutPlanner;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.terrain.DungeonTerrainPlan;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.terrain.DungeonTerrainPlanner;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
@@ -35,6 +44,9 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 public final class DungeonDebugCommands {
@@ -74,6 +86,14 @@ public final class DungeonDebugCommands {
                                         context.getSource(),
                                         IntegerArgumentType.getInteger(context, "warmupRadiusChunks")
                                 ))))
+                .then(Commands.literal("layout-test")
+                        .then(Commands.argument("profile", StringArgumentType.word())
+                                .then(Commands.argument("count", IntegerArgumentType.integer(1, 1000))
+                                        .executes(context -> layoutTest(
+                                                context.getSource(),
+                                                StringArgumentType.getString(context, "profile"),
+                                                IntegerArgumentType.getInteger(context, "count")
+                                        )))))
                 .then(Commands.literal("close-empty")
                         .executes(context -> closeEmpty(context.getSource())))
                 .then(Commands.literal("purge-expired-sessions")
@@ -713,6 +733,155 @@ public final class DungeonDebugCommands {
         return Command.SINGLE_SUCCESS;
     }
 
+    private static int layoutTest(
+            CommandSourceStack source,
+            String profileName,
+            int count
+    ) {
+        Optional<DungeonLayoutGenerationProfile> maybeProfile =
+                parseLayoutProfile(profileName);
+
+        if (maybeProfile.isEmpty()) {
+            source.sendFailure(Component.literal(
+                    "Unknown layout profile '"
+                            + profileName
+                            + "'. Valid profiles: SMALL_TEST, MEDIUM_TEST, LARGE_TEST"
+            ));
+            return 0;
+        }
+
+        DungeonLayoutGenerationProfile profile = maybeProfile.get();
+        LayoutTestStats stats = new LayoutTestStats();
+
+        for (int index = 0; index < count; index++) {
+            long seed = index * 0x9E3779B97F4A7C15L;
+            BlockPos layoutOrigin = new BlockPos(
+                    (int) (index * 9973L),
+                    DungeonSitePlacement.PROTOTYPE_Y - 1,
+                    (int) (index * -7919L)
+            );
+
+            try {
+                DungeonLayoutPlan plan =
+                        PreliminaryDungeonLayoutPlanner.plan(layoutOrigin, profile);
+                plan.validateTree();
+                DungeonTerrainPlan terrainPlan =
+                        DungeonTerrainPlanner.build(layoutOrigin, plan);
+                stats.recordSuccess(plan, terrainPlan);
+            } catch (RuntimeException exception) {
+                stats.recordFailure(seed, profile, exception);
+            }
+        }
+
+        source.sendSuccess(
+                () -> Component.literal(
+                        "Layout test profile="
+                                + profile
+                                + " attempted="
+                                + count
+                                + " successful="
+                                + stats.successful
+                                + " failed="
+                                + stats.failed
+                                + " avgRooms="
+                                + stats.averageRooms()
+                                + " maxRooms="
+                                + stats.maxRooms
+                ),
+                false
+        );
+        source.sendSuccess(
+                () -> Component.literal(
+                        "  avgBoundsCells="
+                                + stats.averageBoundsCells()
+                                + " maxBoundsCells="
+                                + stats.maxBoundsCells
+                                + " avgBoundsBlocks="
+                                + stats.averageBoundsBlocks()
+                                + " maxBoundsBlocks="
+                                + stats.maxBoundsBlocks
+                ),
+                false
+        );
+        source.sendSuccess(
+                () -> Component.literal(
+                        "  terrain avgOuterBlocks="
+                                + stats.averageTerrainOuterBlocks()
+                                + " maxOuterBlocks="
+                                + stats.maxTerrainOuterBlocks
+                                + " avgRooms="
+                                + stats.averageTerrainRooms()
+                                + " avgCorridors="
+                                + stats.averageTerrainCorridors()
+                ),
+                false
+        );
+        source.sendSuccess(
+                () -> Component.literal(
+                        "  failures: internalOverlap="
+                                + stats.internalOverlapFailures
+                                + ", disconnected="
+                                + stats.disconnectedFailures
+                                + ", cycleOrTree="
+                                + stats.treeFailures
+                                + ", branchCap="
+                                + stats.branchCapFailures
+                                + ", other="
+                                + stats.otherFailures
+                ),
+                false
+        );
+
+        for (String failure : stats.failureSummaries) {
+            source.sendFailure(Component.literal("  " + failure));
+        }
+
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static Optional<DungeonLayoutGenerationProfile> parseLayoutProfile(String profileName) {
+        try {
+            return Optional.of(DungeonLayoutGenerationProfile.valueOf(
+                    profileName.toUpperCase(Locale.ROOT)
+            ));
+        } catch (IllegalArgumentException exception) {
+            return Optional.empty();
+        }
+    }
+
+    private static DungeonCellBox layoutBounds(DungeonLayoutPlan plan) {
+        DungeonCellBox result = null;
+
+        for (DungeonLayoutNode node : plan.nodes()) {
+            DungeonCellBox box = node.cellBox();
+
+            if (result == null) {
+                result = box;
+            } else {
+                int minX = Math.min(result.minX(), box.minX());
+                int minY = Math.min(result.minY(), box.minY());
+                int minZ = Math.min(result.minZ(), box.minZ());
+                int maxX = Math.max(result.maxXExclusive(), box.maxXExclusive());
+                int maxY = Math.max(result.maxYExclusive(), box.maxYExclusive());
+                int maxZ = Math.max(result.maxZExclusive(), box.maxZExclusive());
+                result = new DungeonCellBox(
+                        minX,
+                        minY,
+                        minZ,
+                        maxX - minX,
+                        maxY - minY,
+                        maxZ - minZ
+                );
+            }
+        }
+
+        if (result == null) {
+            throw new IllegalArgumentException("Cannot compute layout bounds for empty plan");
+        }
+
+        return result;
+    }
+
     private static Optional<ResolvedPlayerSite> resolvePlayerSite(
             CommandSourceStack source
     ) {
@@ -851,6 +1020,120 @@ public final class DungeonDebugCommands {
                 DungeonSitePlacement.PROTOTYPE_Y + 2,
                 z
         );
+    }
+
+    private static final class LayoutTestStats {
+        private static final int MAX_FAILURE_SUMMARIES = 8;
+
+        private int successful;
+        private int failed;
+        private int totalRooms;
+        private int maxRooms;
+        private int totalBoundsCells;
+        private int maxBoundsCells;
+        private int totalBoundsBlocks;
+        private int maxBoundsBlocks;
+        private int totalTerrainOuterBlocks;
+        private int maxTerrainOuterBlocks;
+        private int totalTerrainRooms;
+        private int totalTerrainCorridors;
+        private int internalOverlapFailures;
+        private int disconnectedFailures;
+        private int treeFailures;
+        private int branchCapFailures;
+        private int otherFailures;
+        private final List<String> failureSummaries = new ArrayList<>();
+
+        private void recordSuccess(
+                DungeonLayoutPlan plan,
+                DungeonTerrainPlan terrainPlan
+        ) {
+            DungeonCellBox bounds = layoutBounds(plan);
+            int boundsCells = bounds.sizeX() * bounds.sizeY() * bounds.sizeZ();
+            int boundsBlocks =
+                    bounds.sizeX()
+                            * DungeonLayoutConstants.CELL_SIZE_X
+                            * bounds.sizeY()
+                            * DungeonLayoutConstants.CELL_SIZE_Y
+                            * bounds.sizeZ()
+                            * DungeonLayoutConstants.CELL_SIZE_Z;
+
+            this.successful++;
+            this.totalRooms += plan.nodes().size();
+            this.maxRooms = Math.max(this.maxRooms, plan.nodes().size());
+            this.totalBoundsCells += boundsCells;
+            this.maxBoundsCells = Math.max(this.maxBoundsCells, boundsCells);
+            this.totalBoundsBlocks += boundsBlocks;
+            this.maxBoundsBlocks = Math.max(this.maxBoundsBlocks, boundsBlocks);
+
+            int terrainOuterBlocks = terrainPlan.outerBounds().getXSpan()
+                    * terrainPlan.outerBounds().getYSpan()
+                    * terrainPlan.outerBounds().getZSpan();
+            this.totalTerrainOuterBlocks += terrainOuterBlocks;
+            this.maxTerrainOuterBlocks = Math.max(this.maxTerrainOuterBlocks, terrainOuterBlocks);
+            this.totalTerrainRooms += terrainPlan.rooms().size();
+            this.totalTerrainCorridors += terrainPlan.corridors().size();
+        }
+
+        private void recordFailure(
+                long seed,
+                DungeonLayoutGenerationProfile profile,
+                RuntimeException exception
+        ) {
+            String message = exception.getMessage() == null
+                    ? exception.getClass().getSimpleName()
+                    : exception.getMessage();
+            String lower = message.toLowerCase(Locale.ROOT);
+
+            this.failed++;
+
+            if (lower.contains("overlap")) {
+                this.internalOverlapFailures++;
+            } else if (lower.contains("connected")) {
+                this.disconnectedFailures++;
+            } else if (lower.contains("tree") || lower.contains("cycle")) {
+                this.treeFailures++;
+            } else if (lower.contains("branch cap")) {
+                this.branchCapFailures++;
+            } else {
+                this.otherFailures++;
+            }
+
+            if (this.failureSummaries.size() < MAX_FAILURE_SUMMARIES) {
+                this.failureSummaries.add(
+                        "seed="
+                                + seed
+                                + " profile="
+                                + profile
+                                + " reason="
+                                + message
+                );
+            }
+        }
+
+        private int averageRooms() {
+            return this.successful == 0 ? 0 : this.totalRooms / this.successful;
+        }
+
+        private int averageBoundsCells() {
+            return this.successful == 0 ? 0 : this.totalBoundsCells / this.successful;
+        }
+
+        private int averageBoundsBlocks() {
+            return this.successful == 0 ? 0 : this.totalBoundsBlocks / this.successful;
+        }
+
+        private int averageTerrainOuterBlocks() {
+            return this.successful == 0 ? 0 : this.totalTerrainOuterBlocks / this.successful;
+        }
+
+        private int averageTerrainRooms() {
+            return this.successful == 0 ? 0 : this.totalTerrainRooms / this.successful;
+        }
+
+        private int averageTerrainCorridors() {
+            return this.successful == 0 ? 0 : this.totalTerrainCorridors / this.successful;
+        }
     }
 
     private record DebugXZ(

@@ -1,6 +1,7 @@
 package io.github.naimjeg.obeliskdepths.worldgen.structure.layout;
 
 import io.github.naimjeg.obeliskdepths.ObeliskDepths;
+import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomType;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.ObeliskDungeonPieceRole;
 import java.util.ArrayList;
 import java.util.List;
@@ -8,9 +9,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 
 public final class ObeliskDungeonLayoutAlgorithm {
-    private static final int ROOM_SPACING = 24;
-    private static final int CORRIDOR_WIDTH = 5;
-
     private ObeliskDungeonLayoutAlgorithm() {
     }
 
@@ -28,85 +26,60 @@ public final class ObeliskDungeonLayoutAlgorithm {
      * connector metadata that this layout algorithm can snap together.
      */
     public static SolvedDungeonLayout solveLinearPrototype(BlockPos startAnchor) {
-        List<SolvedDungeonRoom> rooms = List.of(
-                solveRoom(new DungeonRoomSpec(
-                        "start",
-                        ObeliskDungeonPieceRole.START_ROOM,
-                        13,
-                        7,
-                        13
-                ), startAnchor),
-                solveRoom(new DungeonRoomSpec(
-                        "combat_01",
-                        ObeliskDungeonPieceRole.COMBAT_ROOM,
-                        15,
-                        7,
-                        15
-                ), startAnchor.offset(ROOM_SPACING, 0, 0)),
-                solveRoom(new DungeonRoomSpec(
-                        "treasure_01",
-                        ObeliskDungeonPieceRole.TREASURE_ROOM,
-                        11,
-                        7,
-                        11
-                ), startAnchor.offset(ROOM_SPACING * 2, 0, 0)),
-                solveRoom(new DungeonRoomSpec(
-                        "exit",
-                        ObeliskDungeonPieceRole.EXIT_ROOM,
-                        11,
-                        7,
-                        11
-                ), startAnchor.offset(ROOM_SPACING * 3, 0, 0))
+        BlockPos layoutOrigin = startAnchor.offset(
+                -DungeonLayoutConstants.CELL_SIZE,
+                -1,
+                -DungeonLayoutConstants.CELL_SIZE
         );
+        DungeonLayoutPlan plan = PreliminaryDungeonLayoutPlanner.plan(layoutOrigin);
+
+        return solvePlan(layoutOrigin, plan);
+    }
+
+    public static SolvedDungeonLayout solvePlan(
+            BlockPos layoutOrigin,
+            DungeonLayoutPlan plan
+    ) {
+        List<SolvedDungeonRoom> rooms = plan.nodes()
+                .stream()
+                .map(node -> solveRoom(layoutOrigin, node))
+                .toList();
 
         SolvedDungeonLayout roomsOnly = new SolvedDungeonLayout(rooms, List.of());
         List<SolvedDungeonCorridor> corridors = new ArrayList<>();
 
-        corridors.add(solveCorridorX(
-                roomsOnly,
-                new DungeonConnectionSpec(
-                        "corridor_start_combat",
-                        "start",
-                        "combat_01",
-                        CORRIDOR_WIDTH
-                )
-        ));
-        corridors.add(solveCorridorX(
-                roomsOnly,
-                new DungeonConnectionSpec(
-                        "corridor_combat_treasure",
-                        "combat_01",
-                        "treasure_01",
-                        CORRIDOR_WIDTH
-                )
-        ));
-        corridors.add(solveCorridorX(
-                roomsOnly,
-                new DungeonConnectionSpec(
-                        "corridor_treasure_exit",
-                        "treasure_01",
-                        "exit",
-                        CORRIDOR_WIDTH
-                )
-        ));
+        for (DungeonLayoutEdge edge : plan.edges()) {
+            corridors.add(solveCorridor(roomsOnly, edge));
+        }
 
         return new SolvedDungeonLayout(rooms, corridors);
     }
 
     private static SolvedDungeonRoom solveRoom(
-            DungeonRoomSpec spec,
-            BlockPos anchor
+            BlockPos layoutOrigin,
+            DungeonLayoutNode node
     ) {
-        int halfX = spec.width() / 2;
-        int halfZ = spec.depth() / 2;
+        BlockPos anchor = node.blockAnchor(layoutOrigin);
+        DungeonRoomSpec spec = new DungeonRoomSpec(
+                node.roomId(),
+                roleFor(node.type()),
+                node.footprint().widthBlocks(),
+                node.footprint().heightBlocks(),
+                node.footprint().depthBlocks()
+        );
+        BoundingBox bounds = node.footprint().toBlockBounds(layoutOrigin, node.cellOrigin());
 
-        BoundingBox bounds = new BoundingBox(
-                anchor.getX() - halfX,
-                anchor.getY() - 1,
-                anchor.getZ() - halfZ,
-                anchor.getX() + halfX,
-                anchor.getY() + spec.height() - 2,
-                anchor.getZ() + halfZ
+        ObeliskDepths.LOGGER.debug(
+                "[OD layout] node id={} type={} footprint={}x{}x{} connectors={} shape={} criticalPath={} branchCap={}",
+                node.roomId(),
+                node.type(),
+                node.footprint().widthCells(),
+                node.footprint().heightCells(),
+                node.footprint().depthCells(),
+                node.connectorSides(),
+                node.connectorShapeType(),
+                node.criticalPath(),
+                node.branchCap()
         );
 
         SolvedDungeonRoom room = new SolvedDungeonRoom(spec, anchor, bounds);
@@ -120,35 +93,41 @@ public final class ObeliskDungeonLayoutAlgorithm {
         return room;
     }
 
-    private static SolvedDungeonCorridor solveCorridorX(
+    private static SolvedDungeonCorridor solveCorridor(
             SolvedDungeonLayout layout,
-            DungeonConnectionSpec spec
+            DungeonLayoutEdge edge
     ) {
-        SolvedDungeonRoom from = layout.room(spec.fromRoomId());
-        SolvedDungeonRoom to = layout.room(spec.toRoomId());
+        SolvedDungeonRoom from = layout.room(edge.fromRoomId());
+        SolvedDungeonRoom to = layout.room(edge.toRoomId());
+        DungeonConnectionSpec spec = new DungeonConnectionSpec(
+                edge.id(),
+                edge.fromRoomId(),
+                edge.toRoomId(),
+                edge.widthCells() * DungeonLayoutConstants.CELL_SIZE
+        );
 
-        if (from.anchor().getY() != to.anchor().getY()
-                || from.anchor().getZ() != to.anchor().getZ()) {
-            throw new IllegalStateException(
-                    "Only X-axis prototype corridors are supported for now: "
-                            + spec.id()
-                            + " from="
-                            + from.anchor()
-                            + " to="
-                            + to.anchor()
-            );
+        if (edge.fromSide().dx() != 0) {
+            return solveCorridorX(from, to, edge, spec);
         }
 
+        return solveCorridorZ(from, to, edge, spec);
+    }
+
+    private static SolvedDungeonCorridor solveCorridorX(
+            SolvedDungeonRoom from,
+            SolvedDungeonRoom to,
+            DungeonLayoutEdge edge,
+            DungeonConnectionSpec spec
+    ) {
         SolvedDungeonRoom left = from.bounds().minX() <= to.bounds().minX() ? from : to;
         SolvedDungeonRoom right = left == from ? to : from;
-
         int minX = left.bounds().maxX() + 1;
         int maxX = right.bounds().minX() - 1;
 
         if (maxX < minX) {
             throw new IllegalStateException(
                     "Invalid corridor gap for "
-                            + spec.id()
+                            + edge.id()
                             + ": left="
                             + left.spec().id()
                             + " bounds="
@@ -160,24 +139,25 @@ public final class ObeliskDungeonLayoutAlgorithm {
             );
         }
 
-        int centerZ = left.anchor().getZ();
-        int halfWidth = spec.width() / 2;
-        int minY = left.anchor().getY() - 1;
-        int maxY = left.anchor().getY() + 4;
+        int centerZ = from.anchor().getZ();
+        int widthBlocks = edge.widthCells() * DungeonLayoutConstants.CELL_SIZE;
+        int minZ = centerZ - widthBlocks / 2;
+        int minY = left.bounds().minY();
+        int maxY = minY + DungeonLayoutConstants.CELL_SIZE_Y - 1;
 
         BoundingBox bounds = new BoundingBox(
                 minX,
                 minY,
-                centerZ - halfWidth,
+                minZ,
                 maxX,
                 maxY,
-                centerZ + halfWidth
+                minZ + widthBlocks - 1
         );
 
         BlockPos anchor = new BlockPos(
                 (minX + maxX) / 2,
                 left.anchor().getY(),
-                centerZ
+                minZ + widthBlocks / 2
         );
 
         SolvedDungeonCorridor corridor = new SolvedDungeonCorridor(spec, anchor, bounds);
@@ -190,5 +170,74 @@ public final class ObeliskDungeonLayoutAlgorithm {
                 bounds
         );
         return corridor;
+    }
+
+    private static SolvedDungeonCorridor solveCorridorZ(
+            SolvedDungeonRoom from,
+            SolvedDungeonRoom to,
+            DungeonLayoutEdge edge,
+            DungeonConnectionSpec spec
+    ) {
+        SolvedDungeonRoom north = from.bounds().minZ() <= to.bounds().minZ() ? from : to;
+        SolvedDungeonRoom south = north == from ? to : from;
+        int minZ = north.bounds().maxZ() + 1;
+        int maxZ = south.bounds().minZ() - 1;
+
+        if (maxZ < minZ) {
+            throw new IllegalStateException(
+                    "Invalid corridor gap for "
+                            + edge.id()
+                            + ": north="
+                            + north.spec().id()
+                            + " bounds="
+                            + north.bounds()
+                            + ", south="
+                            + south.spec().id()
+                            + " bounds="
+                            + south.bounds()
+            );
+        }
+
+        int centerX = from.anchor().getX();
+        int widthBlocks = edge.widthCells() * DungeonLayoutConstants.CELL_SIZE;
+        int minX = centerX - widthBlocks / 2;
+        int minY = north.bounds().minY();
+        int maxY = minY + DungeonLayoutConstants.CELL_SIZE_Y - 1;
+
+        BoundingBox bounds = new BoundingBox(
+                minX,
+                minY,
+                minZ,
+                minX + widthBlocks - 1,
+                maxY,
+                maxZ
+        );
+
+        BlockPos anchor = new BlockPos(
+                minX + widthBlocks / 2,
+                north.anchor().getY(),
+                (minZ + maxZ) / 2
+        );
+
+        SolvedDungeonCorridor corridor = new SolvedDungeonCorridor(spec, anchor, bounds);
+        ObeliskDepths.LOGGER.debug(
+                "[OD layout] corridor id={} from={} to={} anchor={} bounds={}",
+                spec.id(),
+                spec.fromRoomId(),
+                spec.toRoomId(),
+                anchor,
+                bounds
+        );
+        return corridor;
+    }
+
+    private static ObeliskDungeonPieceRole roleFor(DungeonRoomType type) {
+        return switch (type) {
+            case START -> ObeliskDungeonPieceRole.START_ROOM;
+            case COMBAT -> ObeliskDungeonPieceRole.COMBAT_ROOM;
+            case TREASURE -> ObeliskDungeonPieceRole.TREASURE_ROOM;
+            case BOSS -> ObeliskDungeonPieceRole.BOSS_ROOM;
+            case EXIT -> ObeliskDungeonPieceRole.EXIT_ROOM;
+        };
     }
 }

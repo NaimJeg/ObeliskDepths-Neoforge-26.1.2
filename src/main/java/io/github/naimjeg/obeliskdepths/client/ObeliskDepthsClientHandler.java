@@ -1,6 +1,8 @@
 package io.github.naimjeg.obeliskdepths.client;
 
 import io.github.naimjeg.obeliskdepths.ObeliskDepths;
+import io.github.naimjeg.obeliskdepths.registry.ModWoodTypes;
+import net.minecraft.client.renderer.Sheets;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -16,5 +18,8 @@ public final class ObeliskDepthsClientHandler {
 
     @SubscribeEvent
     static void onClientSetup(FMLClientSetupEvent event) {
+        event.enqueueWork(() ->
+                Sheets.addWoodType(ModWoodTypes.GREAT_SWAMP_TAXODIUM)
+        );
     }
 }

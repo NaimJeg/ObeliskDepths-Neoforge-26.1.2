@@ -13,6 +13,11 @@ import io.github.naimjeg.obeliskdepths.dungeon.site.WorldgenDungeonSiteLocator;
 import io.github.naimjeg.obeliskdepths.dungeon.state.DungeonManagerSavedData;
 import io.github.naimjeg.obeliskdepths.registry.ModDimensions;
 import io.github.naimjeg.obeliskdepths.world.ObeliskDepthsTeleporter;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutConstants;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutEdge;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutNode;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutPlan;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.PreliminaryDungeonLayoutPlanner;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
@@ -316,6 +321,83 @@ public final class DungeonSiteDebugCommands {
                                     + ", "
                                     + room.bounds().maxZ()
                                     + "]"
+                    ),
+                    false
+            );
+        }
+
+        sendPreliminaryPlanInfo(source, site);
+    }
+
+    private static void sendPreliminaryPlanInfo(
+            CommandSourceStack source,
+            DungeonSite site
+    ) {
+        BlockPos layoutOrigin = site.startPos().offset(
+                -DungeonLayoutConstants.CELL_SIZE,
+                -1,
+                -DungeonLayoutConstants.CELL_SIZE
+        );
+        DungeonLayoutPlan plan = PreliminaryDungeonLayoutPlanner.plan(layoutOrigin);
+
+        source.sendSuccess(
+                () -> Component.literal(
+                        "  preliminaryLayout cellSize="
+                                + DungeonLayoutConstants.CELL_SIZE_X
+                                + "x"
+                                + DungeonLayoutConstants.CELL_SIZE_Y
+                                + "x"
+                                + DungeonLayoutConstants.CELL_SIZE_Z
+                                + ", nodes="
+                                + plan.nodes().size()
+                                + ", edges="
+                                + plan.edges().size()
+                                + " (debug worldgen-side plan; runtime reads generated pieces)"
+                ),
+                false
+        );
+
+        for (DungeonLayoutNode node : plan.nodes()) {
+            source.sendSuccess(
+                    () -> Component.literal(
+                            "    node "
+                                    + node.roomId()
+                                    + " type="
+                                    + node.type().getSerializedName()
+                                    + " footprintCells="
+                                    + node.footprint().widthCells()
+                                    + "x"
+                                    + node.footprint().heightCells()
+                                    + "x"
+                                    + node.footprint().depthCells()
+                                    + " connectors="
+                                    + node.connectorSides()
+                                    + " connectorShape="
+                                    + node.connectorShapeType()
+                                    + " criticalPath="
+                                    + node.criticalPath()
+                                    + " branchCap="
+                                    + node.branchCap()
+                    ),
+                    false
+            );
+        }
+
+        for (DungeonLayoutEdge edge : plan.edges()) {
+            source.sendSuccess(
+                    () -> Component.literal(
+                            "    edge "
+                                    + edge.id()
+                                    + " "
+                                    + edge.fromRoomId()
+                                    + "."
+                                    + edge.fromSide()
+                                    + " -> "
+                                    + edge.toRoomId()
+                                    + "."
+                                    + edge.toSide()
+                                    + " widthCells="
+                                    + edge.widthCells()
                     ),
                     false
             );

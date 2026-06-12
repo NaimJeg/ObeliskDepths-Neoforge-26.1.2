@@ -112,18 +112,67 @@ public final class ObeliskDungeonPiece extends StructurePiece {
     ) {
         BoundingBox pieceBB = this.getBoundingBox();
 
-        placeDebugPlane(level, chunkBB, pieceBB);
+        switch (this.role) {
+            case SITE -> {
+                // Site piece intentionally carries authoritative bounds only.
+            }
+            case CORRIDOR -> placeFloorPlane(
+                    level,
+                    chunkBB,
+                    pieceBB,
+                    ModBlocks.DUNGEON_BRICKS.get().defaultBlockState()
+            );
+            case START_ROOM, COMBAT_ROOM, TREASURE_ROOM, BOSS_ROOM, EXIT_ROOM ->
+                    placeRoom(level, chunkBB, pieceBB);
+        }
     }
 
     /*
-     * Temporary renderer. Later replace this with StructureTemplate placement
-     * loaded from vanilla structure-block .nbt files while preserving
-     * role/roomId/anchor/boundingBox metadata.
+     * Current graph/debug renderer: generated pieces expose authoritative
+     * site/room/corridor metadata and place only floor/path markers. Full
+     * terrain, walls, ceilings, shell, and NBT room templates are intentionally
+     * deferred.
      */
-    private void placeDebugPlane(
+    private void placeRoom(
             WorldGenLevel level,
             BoundingBox chunkBB,
             BoundingBox pieceBB
+    ) {
+        placeFloorPlane(level, chunkBB, pieceBB, floorStateForRole());
+        placeRoomMarker(level, chunkBB, pieceBB);
+    }
+
+    private void placeRoomMarker(
+            WorldGenLevel level,
+            BoundingBox chunkBB,
+            BoundingBox pieceBB
+    ) {
+        if (this.anchorPos.getY() != pieceBB.minY() + 1) {
+            return;
+        }
+
+        BlockPos markerPos = this.anchorPos.below();
+
+        if (!chunkBB.isInside(markerPos)) {
+            return;
+        }
+
+        BlockState marker = switch (this.role) {
+            case START_ROOM, EXIT_ROOM -> ModBlocks.DUNGEON_LAMP.get().defaultBlockState();
+            case COMBAT_ROOM -> ModBlocks.REINFORCED_DUNGEON_STONE.get().defaultBlockState();
+            case TREASURE_ROOM -> ModBlocks.GREAT_SWAMP_TAXODIUM_ROOT_TANGLE.get().defaultBlockState();
+            case BOSS_ROOM -> ModBlocks.OBELISK.get().defaultBlockState();
+            case SITE, CORRIDOR -> ModBlocks.DUNGEON_BRICKS.get().defaultBlockState();
+        };
+
+        level.setBlock(markerPos, marker, 2);
+    }
+
+    private static void placeFloorPlane(
+            WorldGenLevel level,
+            BoundingBox chunkBB,
+            BoundingBox pieceBB,
+            BlockState state
     ) {
         int floorY = pieceBB.minY();
 
@@ -131,29 +180,52 @@ public final class ObeliskDungeonPiece extends StructurePiece {
             return;
         }
 
-        int minX = Math.max(pieceBB.minX(), chunkBB.minX());
-        int maxX = Math.min(pieceBB.maxX(), chunkBB.maxX());
-        int minZ = Math.max(pieceBB.minZ(), chunkBB.minZ());
-        int maxZ = Math.min(pieceBB.maxZ(), chunkBB.maxZ());
+        BoundingBox clipped = intersection(
+                chunkBB,
+                new BoundingBox(
+                        pieceBB.minX(),
+                        floorY,
+                        pieceBB.minZ(),
+                        pieceBB.maxX(),
+                        floorY,
+                        pieceBB.maxZ()
+                )
+        );
 
-        if (minX > maxX || minZ > maxZ) {
+        if (clipped == null) {
             return;
         }
 
-        BlockState state = floorStateForRole();
-
-        for (int x = minX; x <= maxX; x++) {
-            for (int z = minZ; z <= maxZ; z++) {
+        for (int x = clipped.minX(); x <= clipped.maxX(); x++) {
+            for (int z = clipped.minZ(); z <= clipped.maxZ(); z++) {
                 level.setBlock(new BlockPos(x, floorY, z), state, 2);
             }
         }
     }
 
+    private static BoundingBox intersection(
+            BoundingBox first,
+            BoundingBox second
+    ) {
+        int minX = Math.max(first.minX(), second.minX());
+        int minY = Math.max(first.minY(), second.minY());
+        int minZ = Math.max(first.minZ(), second.minZ());
+        int maxX = Math.min(first.maxX(), second.maxX());
+        int maxY = Math.min(first.maxY(), second.maxY());
+        int maxZ = Math.min(first.maxZ(), second.maxZ());
+
+        if (minX > maxX || minY > maxY || minZ > maxZ) {
+            return null;
+        }
+
+        return new BoundingBox(minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
     private BlockState floorStateForRole() {
         return switch (this.role) {
-            case START_ROOM, EXIT_ROOM, CORRIDOR -> ModBlocks.DUNGEON_BRICKS.get().defaultBlockState();
+            case SITE, START_ROOM, EXIT_ROOM, CORRIDOR -> ModBlocks.DUNGEON_BRICKS.get().defaultBlockState();
             case COMBAT_ROOM -> ModBlocks.DUNGEON_STONE.get().defaultBlockState();
-            case TREASURE_ROOM -> ModBlocks.DUNGEON_TILES.get().defaultBlockState();
+            case TREASURE_ROOM, BOSS_ROOM -> ModBlocks.DUNGEON_TILES.get().defaultBlockState();
         };
     }
 }

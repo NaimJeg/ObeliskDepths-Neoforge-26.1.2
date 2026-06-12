@@ -35,13 +35,14 @@ public class ObeliskTemperingMenu extends AbstractContainerMenu {
     public static final int INGREDIENT_SLOT = 2;
     public static final int RESULT_SLOT = 3;
 
-    public static final int WEAPON_SLOT_X = 16;
-    public static final int WEAPON_SLOT_Y = 24;
-    public static final int TEMPLATE_SLOT_X = 16;
-    public static final int TEMPLATE_SLOT_Y = 48;
-    public static final int INGREDIENT_SLOT_X = 16;
-    public static final int INGREDIENT_SLOT_Y = 72;
-    public static final int RESULT_SLOT_X = 144;
+    public static final int WEAPON_SLOT_X = 18;
+    public static final int WEAPON_SLOT_Y = 22;
+    public static final int TEMPLATE_SLOT_X = 43;
+    public static final int TEMPLATE_SLOT_Y = 22;
+    public static final int INGREDIENT_SLOT_X = 30;
+    public static final int INGREDIENT_SLOT_Y = 48;
+    // TODO: Replace this temporary output slot with the final explicit apply control.
+    public static final int RESULT_SLOT_X = 152;
     public static final int RESULT_SLOT_Y = 48;
 
     public static final int AFFIX_BUTTON_OFFSET = 1000;
@@ -107,7 +108,7 @@ public class ObeliskTemperingMenu extends AbstractContainerMenu {
                 RESULT_SLOT_Y
         ));
 
-        this.addStandardInventorySlots(inventory, 8, 114);
+        this.addStandardInventorySlots(inventory, 7, 84);
 
         this.addDataSlot(this.selectedDirection)
                 .set(TemperingDirection.BALANCE.id());

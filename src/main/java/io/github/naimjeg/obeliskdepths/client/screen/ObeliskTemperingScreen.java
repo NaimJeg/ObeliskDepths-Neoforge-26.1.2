@@ -28,14 +28,14 @@ public class ObeliskTemperingScreen
                     "textures/gui/container/obelisk_tempering.png"
             );
 
-    private static final int DIRECTION_LIST_X = 52;
-    private static final int DIRECTION_LIST_Y = 32;
-    private static final int DIRECTION_LIST_WIDTH = 72;
-    private static final int DIRECTION_LIST_HEIGHT = 78;
-    private static final int AFFIX_LIST_X = 132;
-    private static final int AFFIX_LIST_Y = 32;
-    private static final int AFFIX_LIST_WIDTH = 104;
-    private static final int AFFIX_LIST_HEIGHT = 78;
+    private static final int DIRECTION_LIST_X = 90;
+    private static final int DIRECTION_LIST_Y = 15;
+    private static final int DIRECTION_LIST_WIDTH = 80;
+    private static final int DIRECTION_LIST_HEIGHT = 50;
+    private static final int AFFIX_LIST_X = 181;
+    private static final int AFFIX_LIST_Y = 8;
+    private static final int AFFIX_LIST_WIDTH = 70;
+    private static final int AFFIX_LIST_HEIGHT = 154;
 
     private DirectionSelectionList directionList;
     private AffixPreviewList affixList;
@@ -51,7 +51,7 @@ public class ObeliskTemperingScreen
             Inventory inventory,
             Component title
     ) {
-        super(menu, inventory, title, 248, 196);
+        super(menu, inventory, title, 256, 166);
     }
 
     @Override
@@ -180,45 +180,12 @@ public class ObeliskTemperingScreen
             int mouseX,
             int mouseY
     ) {
-        graphics.text(
-                this.font,
-                this.title,
-                this.titleLabelX,
-                this.titleLabelY,
-                0x404040,
-                false
-        );
-        graphics.text(
-                this.font,
-                Component.translatable("gui.obeliskdepths.tempering.directions"),
-                DIRECTION_LIST_X,
-                20,
-                0x404040,
-                false
-        );
-        graphics.text(
-                this.font,
-                Component.translatable("gui.obeliskdepths.tempering.possible_affixes"),
-                AFFIX_LIST_X,
-                20,
-                0x404040,
-                false
-        );
-        graphics.text(
-                this.font,
-                this.playerInventoryTitle,
-                this.inventoryLabelX,
-                this.inventoryLabelY,
-                0x404040,
-                false
-        );
-
         if (this.menu.hasRecipeError()) {
             graphics.text(
                     this.font,
-                    Component.translatable("gui.obeliskdepths.tempering.invalid_recipe"),
-                    52,
-                    114,
+                    Component.literal("!"),
+                    ObeliskTemperingMenu.RESULT_SLOT_X + 21,
+                    ObeliskTemperingMenu.RESULT_SLOT_Y + 4,
                     0xA00000,
                     false
             );
@@ -234,7 +201,7 @@ public class ObeliskTemperingScreen
                 int width,
                 int height
         ) {
-            super(minecraft, width, height, y, 18);
+            super(minecraft, width, height, y, 12);
             this.updateSizeAndPosition(width, height, x, y);
             this.replaceEntries(Arrays.stream(TemperingDirection.values())
                     .map(direction -> new Entry(direction))

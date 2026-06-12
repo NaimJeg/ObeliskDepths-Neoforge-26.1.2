@@ -34,6 +34,14 @@ public final class GeneratedDungeonSiteProjector {
         List<DungeonGeneratedRoom> rooms =
                 GeneratedDungeonRoomProjector.projectRooms(start);
 
+        if (rooms.isEmpty()) {
+            ObeliskDepths.LOGGER.warn(
+                    "Projected dungeon site {} has generated StructureStart bounds but no dungeon room metadata pieces: bounds={}",
+                    key,
+                    bounds
+            );
+        }
+
         BlockPos fallbackStartPos = new BlockPos(
                 box.getCenter().getX(),
                 box.minY(),
@@ -45,6 +53,16 @@ public final class GeneratedDungeonSiteProjector {
                 .findFirst()
                 .map(DungeonGeneratedRoom::spawnPos)
                 .orElse(fallbackStartPos);
+
+        if (!rooms.isEmpty()
+                && rooms.stream().noneMatch(room -> room.type() == DungeonRoomType.START)) {
+            ObeliskDepths.LOGGER.warn(
+                    "Projected dungeon site {} has rooms but no start room metadata: bounds={}, rooms={}",
+                    key,
+                    bounds,
+                    rooms.size()
+            );
+        }
 
         if (rooms.stream().noneMatch(room -> room.contains(startPos))) {
             ObeliskDepths.LOGGER.warn(

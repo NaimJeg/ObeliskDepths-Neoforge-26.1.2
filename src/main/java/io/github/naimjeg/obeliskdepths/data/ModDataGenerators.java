@@ -19,11 +19,10 @@ public final class ModDataGenerators {
     public static void gatherClientData(GatherDataEvent.Client event) {
         event.createProvider(ModModelProvider::new);
         event.createProvider(LangEnUsProvider::new);
-    }
 
-    @SubscribeEvent
-    public static void gatherServerData(GatherDataEvent.Server event) {
         event.createProvider(ModBlockTagProvider::new);
+        event.createProvider(ModItemTagProvider::new);
+        event.createProvider(ModRecipeProvider.Runner::new);
 
         event.createProvider((output, lookupProvider) -> new LootTableProvider(
                 output,
@@ -36,5 +35,10 @@ public final class ModDataGenerators {
                 ),
                 lookupProvider
         ));
+    }
+
+    @SubscribeEvent
+    public static void gatherServerData(GatherDataEvent.Server event) {
+
     }
 }

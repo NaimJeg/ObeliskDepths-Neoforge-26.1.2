@@ -10,6 +10,7 @@ import net.minecraft.client.data.models.MultiVariant;
 import net.minecraft.client.data.models.model.ModelTemplates;
 import net.minecraft.client.data.models.model.TextureMapping;
 import net.minecraft.client.data.models.model.TextureSlot;
+import net.minecraft.client.data.models.model.TexturedModel;
 
 import com.google.gson.JsonArray;
 import net.minecraft.data.PackOutput;
@@ -29,10 +30,17 @@ public final class ModModelProvider extends ModelProvider {
         ModBlocks.TRIVIAL_CUBE_BLOCKS.forEach(block ->
                 blockModels.createTrivialCube(block.get())
         );
+        ModBlocks.STONE_BLOCK_SETS.forEach(set ->
+                createStoneBlockSet(blockModels, set)
+        );
+        ModBlocks.WOOD_BLOCK_SETS.forEach(set ->
+                createWoodBlockSet(blockModels, set)
+        );
 
         createObeliskSmithingTable(blockModels, ModBlocks.OBELISK_SMITHING_TABLE.get());
         createReinforcedDungeonStoneBlock(blockModels, ModBlocks.REINFORCED_DUNGEON_STONE.get());
         createModGrassBlock(blockModels, ModBlocks.GREAT_SWAMP_GRASS_BLOCK.get());
+        createRootTangle(blockModels, ModBlocks.GREAT_SWAMP_TAXODIUM_ROOT_TANGLE.get());
         createGreatSwampVines(blockModels);
 
         itemModels.generateFlatItem(
@@ -127,6 +135,90 @@ public final class ModModelProvider extends ModelProvider {
                 ModBlocks.GREAT_SWAMP_VINES.get(),
                 "_plant"
         );
+    }
+
+    private static void createStoneBlockSet(
+            BlockModelGenerators blockModels,
+            ModBlocks.StoneBlockSet set
+    ) {
+        blockModels.familyWithExistingFullBlock(set.base().get())
+                .slab(set.slab().get())
+                .stairs(set.stairs().get())
+                .wall(set.wall().get());
+    }
+
+    private static void createWoodBlockSet(
+            BlockModelGenerators blockModels,
+            ModBlocks.WoodBlockSet set
+    ) {
+        blockModels.woodProvider(set.log().get())
+                .logWithHorizontal(set.log().get())
+                .wood(set.wood().get());
+        blockModels.woodProvider(set.strippedLog().get())
+                .logWithHorizontal(set.strippedLog().get())
+                .wood(set.strippedWood().get());
+
+        blockModels.createTrivialCube(set.planks().get());
+        var family = blockModels.familyWithExistingFullBlock(set.planks().get())
+                .stairs(set.stairs().get())
+                .slab(set.slab().get())
+                .fence(set.fence().get())
+                .fenceGate(set.fenceGate().get())
+//                .pressurePlate(set.pressurePlate().get())
+//                .button(set.button().get())
+                .door(set.door().get());
+        family.trapdoor(set.trapdoor().get());
+
+//        createSign(blockModels, set.planks().get(), set.sign().get(), set.wallSign().get());
+//        blockModels.createHangingSign(
+//                set.strippedLog().get(),
+//                set.hangingSign().get(),
+//                set.wallHangingSign().get()
+//        );
+        blockModels.createTintedLeaves(
+                set.leaves().get(),
+                TexturedModel.LEAVES,
+                -12012264
+        );
+    }
+
+    private static void createSign(
+            BlockModelGenerators blockModels,
+            Block particleBlock,
+            Block sign,
+            Block wallSign
+    ) {
+        Identifier model = ModelTemplates.PARTICLE_ONLY.create(
+                sign,
+                TextureMapping.particle(particleBlock),
+                blockModels.modelOutput
+        );
+        MultiVariant variant = BlockModelGenerators.plainVariant(model);
+
+        blockModels.blockStateOutput.accept(
+                BlockModelGenerators.createSimpleBlock(sign, variant)
+        );
+        blockModels.blockStateOutput.accept(
+                BlockModelGenerators.createSimpleBlock(wallSign, variant)
+        );
+        blockModels.registerSimpleFlatItemModel(sign.asItem());
+    }
+
+    private static void createRootTangle(
+            BlockModelGenerators blockModels,
+            Block block
+    ) {
+        Identifier model = ModelTemplates.CUBE_BOTTOM_TOP.create(
+                block,
+                TextureMapping.cubeBottomTop(block),
+                blockModels.modelOutput
+        );
+        MultiVariant variant = BlockModelGenerators.plainVariant(model);
+
+        blockModels.blockStateOutput.accept(
+                BlockModelGenerators.createSimpleBlock(block, variant)
+        );
+        blockModels.registerSimpleItemModel(block, model);
     }
 
     private static JsonArray jsonArray(Number... values) {
