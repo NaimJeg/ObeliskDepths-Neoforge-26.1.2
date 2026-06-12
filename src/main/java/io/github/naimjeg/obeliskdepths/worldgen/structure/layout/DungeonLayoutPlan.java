@@ -1,5 +1,7 @@
 package io.github.naimjeg.obeliskdepths.worldgen.structure.layout;
 
+import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphEdgeKind;
+
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -24,6 +26,7 @@ public record DungeonLayoutPlan(
 
         nodes = List.copyOf(nodes);
         edges = List.copyOf(edges);
+
         validateNodeIds(nodes);
         validateEdgeIds(edges);
         validateEndpoints(nodes, edges);
@@ -46,15 +49,49 @@ public record DungeonLayoutPlan(
         validateConnected(this.nodes, this.edges);
     }
 
+    /**
+     * Validates invariants that depend on the complete planned layout.
+     *
+     * The current prototype requires:
+     * - no overlapping room footprints;
+     * - at least one room;
+     * - a connected graph;
+     * - a tree-shaped topology with no loops.
+     */
     public void validateSpatial() {
         validateNoNodeOverlap(this.nodes);
+        validateTreeSpanningStructure(this.nodes, this.edges);
         validateConnected(this.nodes, this.edges);
     }
 
-    public void validateSpatial() {
-        validateNoNodeOverlap(this.nodes);
-        validateBranchCaps(this.nodes);
-        validateTree(this.nodes, this.edges);
+    private static void validateTreeSpanningStructure(
+            List<DungeonLayoutNode> nodes,
+            List<DungeonLayoutEdge> edges
+    ) {
+        if (nodes.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Dungeon layout requires at least one node"
+            );
+        }
+
+        List<DungeonLayoutEdge> treeEdges = edges.stream()
+                .filter(edge -> edge.kind() == DungeonGraphEdgeKind.TREE)
+                .toList();
+
+        int expectedTreeEdgeCount = nodes.size() - 1;
+
+        if (treeEdges.size() != expectedTreeEdgeCount) {
+            throw new IllegalArgumentException(
+                    "Dungeon layout TREE edges must form a spanning tree: nodes="
+                            + nodes.size()
+                            + ", treeEdges="
+                            + treeEdges.size()
+                            + ", expectedTreeEdges="
+                            + expectedTreeEdgeCount
+            );
+        }
+
+        validateConnected(nodes, treeEdges);
     }
 
     private static void validateNodeIds(List<DungeonLayoutNode> nodes) {
@@ -62,7 +99,9 @@ public record DungeonLayoutPlan(
 
         for (DungeonLayoutNode node : nodes) {
             if (!seen.add(node.roomId())) {
-                throw new IllegalArgumentException("Duplicate layout node id: " + node.roomId());
+                throw new IllegalArgumentException(
+                        "Duplicate layout node id: " + node.roomId()
+                );
             }
         }
     }
@@ -72,7 +111,9 @@ public record DungeonLayoutPlan(
 
         for (DungeonLayoutEdge edge : edges) {
             if (!seen.add(edge.id())) {
-                throw new IllegalArgumentException("Duplicate layout edge id: " + edge.id());
+                throw new IllegalArgumentException(
+                        "Duplicate layout edge id: " + edge.id()
+                );
             }
         }
     }
@@ -88,7 +129,8 @@ public record DungeonLayoutPlan(
         }
 
         for (DungeonLayoutEdge edge : edges) {
-            if (!ids.contains(edge.fromRoomId()) || !ids.contains(edge.toRoomId())) {
+            if (!ids.contains(edge.fromRoomId())
+                    || !ids.contains(edge.toRoomId())) {
                 throw new IllegalArgumentException(
                         "Layout edge has missing endpoint: " + edge
                 );
@@ -96,7 +138,9 @@ public record DungeonLayoutPlan(
         }
     }
 
-    private static void validateNoNodeOverlap(List<DungeonLayoutNode> nodes) {
+    private static void validateNoNodeOverlap(
+            List<DungeonLayoutNode> nodes
+    ) {
         for (int i = 0; i < nodes.size(); i++) {
             DungeonLayoutNode first = nodes.get(i);
 
@@ -120,7 +164,9 @@ public record DungeonLayoutPlan(
             List<DungeonLayoutEdge> edges
     ) {
         if (nodes.isEmpty()) {
-            throw new IllegalArgumentException("Dungeon layout requires at least one node");
+            throw new IllegalArgumentException(
+                    "Dungeon layout requires at least one node"
+            );
         }
 
         Map<String, List<String>> adjacency = new HashMap<>();
@@ -136,7 +182,7 @@ public record DungeonLayoutPlan(
 
         Set<String> visited = new HashSet<>();
         Queue<String> queue = new ArrayDeque<>();
-        queue.add(nodes.get(0).roomId());
+        queue.add(nodes.getFirst().roomId());
 
         while (!queue.isEmpty()) {
             String current = queue.remove();
