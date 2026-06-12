@@ -8,7 +8,8 @@ public record DungeonPieceMetadata(
         ObeliskDungeonPieceRole role,
         String id,
         BlockPos anchor,
-        BoundingBox bounds
+        BoundingBox bounds,
+        boolean primaryEntry
 ) {
     public DungeonPieceMetadata {
         if (role == null) {
@@ -21,6 +22,10 @@ public record DungeonPieceMetadata(
 
         if (anchor == null || bounds == null) {
             throw new IllegalArgumentException("Dungeon piece anchor and bounds must be present: " + id);
+        }
+
+        if (primaryEntry && role != ObeliskDungeonPieceRole.START_ROOM) {
+            throw new IllegalArgumentException("Only START_ROOM pieces may be primary entry metadata: " + id);
         }
     }
 }

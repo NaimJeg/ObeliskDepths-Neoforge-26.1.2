@@ -15,11 +15,12 @@ import io.github.naimjeg.obeliskdepths.registry.ModDimensions;
 import io.github.naimjeg.obeliskdepths.world.ObeliskDepthsTeleporter;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.ObeliskDungeonStructure;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraph;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphAnalysis;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphAnalyzer;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphGenerator;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonGraphEmbeddingPlanner;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutConstants;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutEdge;
-import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutGenerationProfile;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutNode;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutPlan;
 import net.minecraft.commands.CommandSourceStack;
@@ -349,26 +350,28 @@ public final class DungeonSiteDebugCommands {
                 chunkPos,
                 layoutOrigin
         );
-        DungeonGraph graph = DungeonGraphGenerator.generate(
-                generationSeed,
-                DungeonLayoutGenerationProfile.SMALL_TEST
-        );
+        DungeonGraph graph = DungeonGraphGenerator.generate(generationSeed);
+        DungeonGraphAnalysis analysis = DungeonGraphAnalyzer.analyze(graph);
         DungeonLayoutPlan plan = DungeonGraphEmbeddingPlanner.embed(graph, layoutOrigin);
 
         source.sendSuccess(
                 () -> Component.literal(
-                        "  debugGraph profile="
-                                + DungeonLayoutGenerationProfile.SMALL_TEST
-                                + " seed="
+                        "  debugGraph seed="
                                 + generationSeed
                                 + " nodes="
                                 + graph.nodes().size()
-                                + " edges="
-                                + graph.edges().size()
-                                + " criticalPath="
-                                + graph.criticalPathNodes().size()
-                                + " branches="
-                                + graph.branchCount()
+                                + " treeEdges="
+                                + graph.treeEdges().size()
+                                + " loopEdges="
+                                + graph.loopEdges().size()
+                                + " starts="
+                                + graph.entryNodeIds().size()
+                                + " primaryEntry="
+                                + graph.primaryEntryNodeId()
+                                + " sectors="
+                                + analysis.sectors().size()
+                                + " maxBossDistance="
+                                + analysis.maxDistanceToBoss()
                                 + " (debug reconstruction; runtime reads generated pieces)"
                 ),
                 false
@@ -407,10 +410,6 @@ public final class DungeonSiteDebugCommands {
                                     + node.connectorSides()
                                     + " connectorShape="
                                     + node.connectorShapeType()
-                                    + " criticalPath="
-                                    + node.criticalPath()
-                                    + " branchCap="
-                                    + node.branchCap()
                     ),
                     false
             );
@@ -431,6 +430,8 @@ public final class DungeonSiteDebugCommands {
                                     + edge.toSide()
                                     + " widthCells="
                                     + edge.widthCells()
+                                    + " kind="
+                                    + edge.kind()
                     ),
                     false
             );
@@ -447,7 +448,7 @@ public final class DungeonSiteDebugCommands {
     }
 
     static BlockPos safeEntryPos(DungeonSite site) {
-        return site.startRoom()
+        return site.primaryEntryRoom()
                 .map(DungeonGeneratedRoom::spawnPos)
                 .orElse(site.startPos())
                 .above();

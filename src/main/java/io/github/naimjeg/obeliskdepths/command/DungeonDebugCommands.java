@@ -2,7 +2,6 @@ package io.github.naimjeg.obeliskdepths.command;
 
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
-import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import io.github.naimjeg.obeliskdepths.dungeon.completion.DungeonCompletionResult;
 import io.github.naimjeg.obeliskdepths.dungeon.completion.DungeonCompletionService;
@@ -30,12 +29,13 @@ import io.github.naimjeg.obeliskdepths.dungeon.state.DungeonManagerSavedData;
 import io.github.naimjeg.obeliskdepths.registry.ModDimensions;
 import io.github.naimjeg.obeliskdepths.world.ObeliskDepthsTeleporter;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraph;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphAnalysis;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphAnalyzer;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphGenerator;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphValidator;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonGraphEmbeddingPlanner;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonCellBox;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutConstants;
-import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutGenerationProfile;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutNode;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutPlan;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.piece.DungeonPiecePlan;
@@ -90,13 +90,11 @@ public final class DungeonDebugCommands {
                                         IntegerArgumentType.getInteger(context, "warmupRadiusChunks")
                                 ))))
                 .then(Commands.literal("layout-test")
-                        .then(Commands.argument("profile", StringArgumentType.word())
-                                .then(Commands.argument("count", IntegerArgumentType.integer(1, 1000))
-                                        .executes(context -> layoutTest(
-                                                context.getSource(),
-                                                StringArgumentType.getString(context, "profile"),
-                                                IntegerArgumentType.getInteger(context, "count")
-                                        )))))
+                        .then(Commands.argument("count", IntegerArgumentType.integer(1, 1000))
+                                .executes(context -> layoutTest(
+                                        context.getSource(),
+                                        IntegerArgumentType.getInteger(context, "count")
+                                ))))
                 .then(Commands.literal("close-empty")
                         .executes(context -> closeEmpty(context.getSource())))
                 .then(Commands.literal("purge-expired-sessions")
@@ -330,7 +328,7 @@ public final class DungeonDebugCommands {
                     warmedChunks
             );
             source.sendFailure(Component.literal(
-                    "dev-start-nearest did not create an instance. Runtime reservation still requires authoritative generated StructureStart metadata."
+                    "dev-start-nearest did not create an instance. Check generated-site locator and projection logs."
             ));
             return 0;
         }
@@ -738,22 +736,8 @@ public final class DungeonDebugCommands {
 
     private static int layoutTest(
             CommandSourceStack source,
-            String profileName,
             int count
     ) {
-        Optional<DungeonLayoutGenerationProfile> maybeProfile =
-                parseLayoutProfile(profileName);
-
-        if (maybeProfile.isEmpty()) {
-            source.sendFailure(Component.literal(
-                    "Unknown layout profile '"
-                            + profileName
-                            + "'. Valid profiles: SMALL_TEST, MEDIUM_TEST, LARGE_TEST"
-            ));
-            return 0;
-        }
-
-        DungeonLayoutGenerationProfile profile = maybeProfile.get();
         LayoutTestStats stats = new LayoutTestStats();
 
         for (int index = 0; index < count; index++) {
@@ -765,27 +749,30 @@ public final class DungeonDebugCommands {
             );
 
             try {
-                DungeonGraph graph = DungeonGraphGenerator.generate(seed, profile);
+                DungeonGraph graph = DungeonGraphGenerator.generate(seed);
                 DungeonGraphValidator.validate(graph);
+                DungeonGraphAnalysis analysis = DungeonGraphAnalyzer.analyze(graph);
 
-                DungeonGraph second = DungeonGraphGenerator.generate(seed, profile);
+                DungeonGraph second = DungeonGraphGenerator.generate(seed);
                 if (!graph.equals(second)) {
                     stats.recordDeterministicMismatch(seed);
                 }
 
                 DungeonLayoutPlan plan = DungeonGraphEmbeddingPlanner.embed(graph, layoutOrigin);
-                DungeonPiecePlan piecePlan = DungeonPiecePlanCompiler.compile(layoutOrigin, plan);
-                stats.recordSuccess(graph, plan, piecePlan);
+                DungeonPiecePlan piecePlan = DungeonPiecePlanCompiler.compile(
+                        layoutOrigin,
+                        plan,
+                        graph.primaryEntryNodeId()
+                );
+                stats.recordSuccess(graph, analysis, plan, piecePlan);
             } catch (RuntimeException exception) {
-                stats.recordFailure(seed, profile, exception);
+                stats.recordFailure(seed, exception);
             }
         }
 
         source.sendSuccess(
                 () -> Component.literal(
-                        "Layout test profile="
-                                + profile
-                                + " attempted="
+                        "Layout test attempted="
                                 + count
                                 + " successful="
                                 + stats.successful
@@ -802,18 +789,47 @@ public final class DungeonDebugCommands {
                                 + stats.minNodes()
                                 + ".."
                                 + stats.maxNodes
-                                + " edges="
-                                + stats.minEdges()
+                                + " treeEdges="
+                                + stats.minTreeEdges()
                                 + ".."
-                                + stats.maxEdges
-                                + " criticalPath="
-                                + stats.minCriticalPathLength()
+                                + stats.maxTreeEdges
+                                + " loopEdges="
+                                + stats.minLoopEdges()
                                 + ".."
-                                + stats.maxCriticalPathLength
-                                + " branches="
-                                + stats.minBranches()
+                                + stats.maxLoopEdges
+                                + " starts="
+                                + stats.minStarts()
                                 + ".."
-                                + stats.maxBranches
+                                + stats.maxStarts
+                ),
+                false
+        );
+        source.sendSuccess(
+                () -> Component.literal(
+                        "  analysis sectors="
+                                + stats.minSectors()
+                                + ".."
+                                + stats.maxSectors
+                                + " maxBossDistance="
+                                + stats.minMaxBossDistance()
+                                + ".."
+                                + stats.maxMaxBossDistance
+                                + " depthBands="
+                                + stats.minDepthBands()
+                                + ".."
+                                + stats.maxDepthBands
+                                + " cyclomatic="
+                                + stats.minCyclomatic()
+                                + ".."
+                                + stats.maxCyclomatic
+                                + " maxDegree="
+                                + stats.minMaxDegree()
+                                + ".."
+                                + stats.maxMaxDegree
+                                + " deadEnds="
+                                + stats.minDeadEnds()
+                                + ".."
+                                + stats.maxDeadEnds
                 ),
                 false
         );
@@ -831,6 +847,18 @@ public final class DungeonDebugCommands {
                                 + stats.averageSiteOuterBlocks()
                                 + " maxSiteOuterBlocks="
                                 + stats.maxSiteOuterBlocks
+                                + " avgRouteCount="
+                                + stats.averageRouteCount()
+                                + " maxRouteCount="
+                                + stats.maxRouteCount
+                                + " avgRouteCells="
+                                + stats.averageRouteCells()
+                                + " maxRouteCells="
+                                + stats.maxRouteCells
+                                + " avgCorridorSegments="
+                                + stats.averageCorridorSegments()
+                                + " maxCorridorSegments="
+                                + stats.maxCorridorSegments
                 ),
                 false
         );
@@ -840,10 +868,10 @@ public final class DungeonDebugCommands {
                                 + stats.embeddingOverlapFailures
                                 + ", disconnected="
                                 + stats.disconnectedFailures
-                                + ", cycleOrTree="
-                                + stats.treeFailures
-                                + ", branchCap="
-                                + stats.branchCapFailures
+                                + ", treeParentage="
+                                + stats.treeParentageFailures
+                                + ", loop="
+                                + stats.loopFailures
                                 + ", other="
                                 + stats.otherFailures
                 ),
@@ -855,16 +883,6 @@ public final class DungeonDebugCommands {
         }
 
         return Command.SINGLE_SUCCESS;
-    }
-
-    private static Optional<DungeonLayoutGenerationProfile> parseLayoutProfile(String profileName) {
-        try {
-            return Optional.of(DungeonLayoutGenerationProfile.valueOf(
-                    profileName.toUpperCase(Locale.ROOT)
-            ));
-        } catch (IllegalArgumentException exception) {
-            return Optional.empty();
-        }
     }
 
     private static DungeonCellBox layoutBounds(DungeonLayoutPlan plan) {
@@ -1048,27 +1066,46 @@ public final class DungeonDebugCommands {
         private int deterministicMismatches;
         private int minNodes = Integer.MAX_VALUE;
         private int maxNodes;
-        private int minEdges = Integer.MAX_VALUE;
-        private int maxEdges;
-        private int minCriticalPathLength = Integer.MAX_VALUE;
-        private int maxCriticalPathLength;
-        private int minBranches = Integer.MAX_VALUE;
-        private int maxBranches;
+        private int minTreeEdges = Integer.MAX_VALUE;
+        private int maxTreeEdges;
+        private int minLoopEdges = Integer.MAX_VALUE;
+        private int maxLoopEdges;
+        private int minStarts = Integer.MAX_VALUE;
+        private int maxStarts;
+        private int minSectors = Integer.MAX_VALUE;
+        private int maxSectors;
+        private int minMaxBossDistance = Integer.MAX_VALUE;
+        private int maxMaxBossDistance;
+        private int minDepthBands = Integer.MAX_VALUE;
+        private int maxDepthBands;
+        private int minCyclomatic = Integer.MAX_VALUE;
+        private int maxCyclomatic;
+        private int minMaxDegree = Integer.MAX_VALUE;
+        private int maxMaxDegree;
+        private int minDeadEnds = Integer.MAX_VALUE;
+        private int maxDeadEnds;
         private int totalBoundsCells;
         private int maxBoundsCells;
         private int totalBoundsBlocks;
         private int maxBoundsBlocks;
         private int totalSiteOuterBlocks;
         private int maxSiteOuterBlocks;
+        private int totalRouteCount;
+        private int maxRouteCount;
+        private int totalRouteCells;
+        private int maxRouteCells;
+        private int totalCorridorSegments;
+        private int maxCorridorSegments;
         private int embeddingOverlapFailures;
         private int disconnectedFailures;
-        private int treeFailures;
-        private int branchCapFailures;
+        private int treeParentageFailures;
+        private int loopFailures;
         private int otherFailures;
         private final List<String> failureSummaries = new ArrayList<>();
 
         private void recordSuccess(
                 DungeonGraph graph,
+                DungeonGraphAnalysis analysis,
                 DungeonLayoutPlan plan,
                 DungeonPiecePlan piecePlan
         ) {
@@ -1085,12 +1122,26 @@ public final class DungeonDebugCommands {
             this.successful++;
             this.minNodes = Math.min(this.minNodes, graph.nodes().size());
             this.maxNodes = Math.max(this.maxNodes, graph.nodes().size());
-            this.minEdges = Math.min(this.minEdges, graph.edges().size());
-            this.maxEdges = Math.max(this.maxEdges, graph.edges().size());
-            this.minCriticalPathLength = Math.min(this.minCriticalPathLength, graph.criticalPathNodes().size());
-            this.maxCriticalPathLength = Math.max(this.maxCriticalPathLength, graph.criticalPathNodes().size());
-            this.minBranches = Math.min(this.minBranches, graph.branchCount());
-            this.maxBranches = Math.max(this.maxBranches, graph.branchCount());
+            this.minTreeEdges = Math.min(this.minTreeEdges, graph.treeEdges().size());
+            this.maxTreeEdges = Math.max(this.maxTreeEdges, graph.treeEdges().size());
+            this.minLoopEdges = Math.min(this.minLoopEdges, graph.loopEdges().size());
+            this.maxLoopEdges = Math.max(this.maxLoopEdges, graph.loopEdges().size());
+            this.minStarts = Math.min(this.minStarts, graph.entryNodeIds().size());
+            this.maxStarts = Math.max(this.maxStarts, graph.entryNodeIds().size());
+            this.minSectors = Math.min(this.minSectors, analysis.sectors().size());
+            this.maxSectors = Math.max(this.maxSectors, analysis.sectors().size());
+            this.minMaxBossDistance = Math.min(this.minMaxBossDistance, analysis.maxDistanceToBoss());
+            this.maxMaxBossDistance = Math.max(this.maxMaxBossDistance, analysis.maxDistanceToBoss());
+            this.minDepthBands = Math.min(this.minDepthBands, analysis.depthBands().size());
+            this.maxDepthBands = Math.max(this.maxDepthBands, analysis.depthBands().size());
+            int cyclomatic = graph.edges().size() - graph.nodes().size() + 1;
+            this.minCyclomatic = Math.min(this.minCyclomatic, cyclomatic);
+            this.maxCyclomatic = Math.max(this.maxCyclomatic, cyclomatic);
+            this.minMaxDegree = Math.min(this.minMaxDegree, analysis.maxDegree());
+            this.maxMaxDegree = Math.max(this.maxMaxDegree, analysis.maxDegree());
+            int deadEnds = (int) analysis.deadEndCount();
+            this.minDeadEnds = Math.min(this.minDeadEnds, deadEnds);
+            this.maxDeadEnds = Math.max(this.maxDeadEnds, deadEnds);
             this.totalBoundsCells += boundsCells;
             this.maxBoundsCells = Math.max(this.maxBoundsCells, boundsCells);
             this.totalBoundsBlocks += boundsBlocks;
@@ -1101,6 +1152,18 @@ public final class DungeonDebugCommands {
                     * piecePlan.siteBounds().getZSpan();
             this.totalSiteOuterBlocks += siteOuterBlocks;
             this.maxSiteOuterBlocks = Math.max(this.maxSiteOuterBlocks, siteOuterBlocks);
+            int routeCount = piecePlan.routedCorridors().size();
+            int routeCells = piecePlan.routedCorridors()
+                    .stream()
+                    .mapToInt(io.github.naimjeg.obeliskdepths.worldgen.structure.piece.DungeonRoutedCorridor::lengthCells)
+                    .sum();
+            int corridorSegments = (int) piecePlan.corridorCount();
+            this.totalRouteCount += routeCount;
+            this.maxRouteCount = Math.max(this.maxRouteCount, routeCount);
+            this.totalRouteCells += routeCells;
+            this.maxRouteCells = Math.max(this.maxRouteCells, routeCells);
+            this.totalCorridorSegments += corridorSegments;
+            this.maxCorridorSegments = Math.max(this.maxCorridorSegments, corridorSegments);
         }
 
         private void recordDeterministicMismatch(long seed) {
@@ -1112,7 +1175,6 @@ public final class DungeonDebugCommands {
 
         private void recordFailure(
                 long seed,
-                DungeonLayoutGenerationProfile profile,
                 RuntimeException exception
         ) {
             String message = exception.getMessage() == null
@@ -1126,10 +1188,10 @@ public final class DungeonDebugCommands {
                 this.embeddingOverlapFailures++;
             } else if (lower.contains("connected")) {
                 this.disconnectedFailures++;
-            } else if (lower.contains("tree") || lower.contains("cycle")) {
-                this.treeFailures++;
-            } else if (lower.contains("branch cap")) {
-                this.branchCapFailures++;
+            } else if (lower.contains("tree") || lower.contains("parent")) {
+                this.treeParentageFailures++;
+            } else if (lower.contains("loop") || lower.contains("cycle")) {
+                this.loopFailures++;
             } else {
                 this.otherFailures++;
             }
@@ -1138,8 +1200,6 @@ public final class DungeonDebugCommands {
                 this.failureSummaries.add(
                         "seed="
                                 + seed
-                                + " profile="
-                                + profile
                                 + " reason="
                                 + message
                 );
@@ -1154,16 +1214,40 @@ public final class DungeonDebugCommands {
             return this.successful == 0 ? 0 : this.minNodes;
         }
 
-        private int minEdges() {
-            return this.successful == 0 ? 0 : this.minEdges;
+        private int minTreeEdges() {
+            return this.successful == 0 ? 0 : this.minTreeEdges;
         }
 
-        private int minCriticalPathLength() {
-            return this.successful == 0 ? 0 : this.minCriticalPathLength;
+        private int minLoopEdges() {
+            return this.successful == 0 ? 0 : this.minLoopEdges;
         }
 
-        private int minBranches() {
-            return this.successful == 0 ? 0 : this.minBranches;
+        private int minStarts() {
+            return this.successful == 0 ? 0 : this.minStarts;
+        }
+
+        private int minSectors() {
+            return this.successful == 0 ? 0 : this.minSectors;
+        }
+
+        private int minMaxBossDistance() {
+            return this.successful == 0 ? 0 : this.minMaxBossDistance;
+        }
+
+        private int minDepthBands() {
+            return this.successful == 0 ? 0 : this.minDepthBands;
+        }
+
+        private int minCyclomatic() {
+            return this.successful == 0 ? 0 : this.minCyclomatic;
+        }
+
+        private int minMaxDegree() {
+            return this.successful == 0 ? 0 : this.minMaxDegree;
+        }
+
+        private int minDeadEnds() {
+            return this.successful == 0 ? 0 : this.minDeadEnds;
         }
 
         private int averageBoundsBlocks() {
@@ -1172,6 +1256,18 @@ public final class DungeonDebugCommands {
 
         private int averageSiteOuterBlocks() {
             return this.successful == 0 ? 0 : this.totalSiteOuterBlocks / this.successful;
+        }
+
+        private int averageRouteCount() {
+            return this.successful == 0 ? 0 : this.totalRouteCount / this.successful;
+        }
+
+        private int averageRouteCells() {
+            return this.successful == 0 ? 0 : this.totalRouteCells / this.successful;
+        }
+
+        private int averageCorridorSegments() {
+            return this.successful == 0 ? 0 : this.totalCorridorSegments / this.successful;
         }
     }
 

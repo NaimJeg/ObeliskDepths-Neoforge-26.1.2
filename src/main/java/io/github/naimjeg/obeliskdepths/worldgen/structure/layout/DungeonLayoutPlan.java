@@ -42,20 +42,13 @@ public record DungeonLayoutPlan(
                 ));
     }
 
-    public List<DungeonLayoutNode> criticalPathNodes() {
-        return this.nodes.stream()
-                .filter(DungeonLayoutNode::criticalPath)
-                .toList();
+    public void validateConnected() {
+        validateConnected(this.nodes, this.edges);
     }
 
-    public List<DungeonLayoutNode> branchCaps() {
-        return this.nodes.stream()
-                .filter(DungeonLayoutNode::branchCap)
-                .toList();
-    }
-
-    public void validateTree() {
-        validateTree(this.nodes, this.edges);
+    public void validateSpatial() {
+        validateNoNodeOverlap(this.nodes);
+        validateConnected(this.nodes, this.edges);
     }
 
     public void validateSpatial() {
@@ -122,34 +115,12 @@ public record DungeonLayoutPlan(
         }
     }
 
-    private static void validateBranchCaps(List<DungeonLayoutNode> nodes) {
-        for (DungeonLayoutNode node : nodes) {
-            if (node.branchCap() && node.connectorSides().size() != 1) {
-                throw new IllegalArgumentException(
-                        "Branch cap layout node must have exactly one connector: "
-                                + node.roomId()
-                                + " connectors="
-                                + node.connectorSides()
-                );
-            }
-        }
-    }
-
-    private static void validateTree(
+    private static void validateConnected(
             List<DungeonLayoutNode> nodes,
             List<DungeonLayoutEdge> edges
     ) {
         if (nodes.isEmpty()) {
-            throw new IllegalArgumentException("Dungeon layout tree requires at least one node");
-        }
-
-        if (edges.size() != nodes.size() - 1) {
-            throw new IllegalArgumentException(
-                    "Dungeon layout must be a tree for now: nodes="
-                            + nodes.size()
-                            + ", edges="
-                            + edges.size()
-            );
+            throw new IllegalArgumentException("Dungeon layout requires at least one node");
         }
 
         Map<String, List<String>> adjacency = new HashMap<>();

@@ -164,6 +164,7 @@ def mainMethodTests = [
         'io.github.naimjeg.obeliskdepths.dungeon.site.ResolvedDungeonSiteTest',
         'io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSiteProjectionSourceTest',
         'io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSiteProjectionCacheGuardTest',
+        'io.github.naimjeg.obeliskdepths.dungeon.runtime.DungeonRuntimeBoundaryTest',
         'io.github.naimjeg.obeliskdepths.dungeon.session.DungeonKillProgressTest',
         'io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphGeneratorTest',
         'io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonGraphEmbeddingPlannerTest',

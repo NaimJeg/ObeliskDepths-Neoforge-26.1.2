@@ -4,13 +4,13 @@ public enum DungeonSiteProjectionSource {
     /*
      * Authoritative:
      * Derived from an actual vanilla StructureStart and its serialized pieces.
-     * This is the only source that should be used for runtime reservation.
      */
     GENERATED_STRUCTURE_START,
 
     /*
      * Saved copy of a previously authoritative projection.
-     * This is acceptable only when it was originally created from a generated StructureStart.
+     * This is acceptable only when it was originally created from a generated
+     * StructureStart projection.
      */
     SAVED_SNAPSHOT,
 

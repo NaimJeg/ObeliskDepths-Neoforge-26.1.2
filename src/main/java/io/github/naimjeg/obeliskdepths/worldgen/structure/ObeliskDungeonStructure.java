@@ -5,11 +5,12 @@ import io.github.naimjeg.obeliskdepths.ObeliskDepths;
 import io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSitePlacement;
 import io.github.naimjeg.obeliskdepths.registry.ModWorldgen;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraph;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphAnalysis;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphAnalyzer;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphGenerator;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphValidator;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonGraphEmbeddingPlanner;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutConstants;
-import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutGenerationProfile;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutNode;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutPlan;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.placement.ObeliskDungeonSiteOverlapGuard;
@@ -85,24 +86,34 @@ public final class ObeliskDungeonStructure extends Structure {
 
         if (!valid) {
             ObeliskDepths.LOGGER.warn(
-                    "[OD structure] invalid biome candidate chunk={} anchor={} actualBiome={}",
+                    "[OD structure] rejected invalid biome candidate "
+                            + "chunk={} anchor={} actualBiome={}",
                     chunkPos,
                     layoutOrigin,
                     actualBiomeId
             );
+            return Optional.empty();
         }
 
+        long generationStart = System.nanoTime();
         long generationSeed = deriveGenerationSeed(context.seed(), chunkPos, layoutOrigin);
-        DungeonGraph graph = DungeonGraphGenerator.generate(
-                generationSeed,
-                DungeonLayoutGenerationProfile.SMALL_TEST
-        );
+        DungeonGraph graph = DungeonGraphGenerator.generate(generationSeed);
+        long graphGenerated = System.nanoTime();
         DungeonGraphValidator.validate(graph);
+        long graphValidated = System.nanoTime();
+        DungeonGraphAnalysis analysis = DungeonGraphAnalyzer.analyze(graph);
+        long graphAnalyzed = System.nanoTime();
 
         DungeonLayoutPlan layout = DungeonGraphEmbeddingPlanner.embed(graph, layoutOrigin);
-        DungeonPiecePlan piecePlan = DungeonPiecePlanCompiler.compile(layoutOrigin, layout);
+        long embedded = System.nanoTime();
+        DungeonPiecePlan piecePlan = DungeonPiecePlanCompiler.compile(
+                layoutOrigin,
+                layout,
+                graph.primaryEntryNodeId()
+        );
+        long compiled = System.nanoTime();
         BoundingBox plannedBounds = piecePlan.siteBounds();
-        BlockPos startRoomAnchor = startRoomAnchor(layout, layoutOrigin);
+        BlockPos startRoomAnchor = piecePlan.primaryEntryAnchor();
 
         Optional<ObeliskDungeonSiteOverlapGuard.Rejection> rejection =
                 ObeliskDungeonSiteOverlapGuard.findRejection(
@@ -110,26 +121,42 @@ public final class ObeliskDungeonStructure extends Structure {
                         chunkPos,
                         plannedBounds
                 );
+        long overlapChecked = System.nanoTime();
 
         if (rejection.isPresent()) {
             return Optional.empty();
         }
 
         ObeliskDepths.LOGGER.debug(
-                "[OD structure] accepted dungeon candidate chunk={} layoutOrigin={} startRoomAnchor={} seed={} bounds={} graphNodes={} graphEdges={} rooms={} corridors={} footprintBlocks={}x{} footprintCells={}x{}",
+                "[OD structure] accepted dungeon candidate chunk={} layoutOrigin={} primaryEntryAnchor={} seed={} bounds={} graphNodes={} treeEdges={} loopEdges={} starts={} sectors={} maxBossDistance={} rooms={} corridors={} footprintBlocks={}x{} footprintCells={}x{}",
                 chunkPos,
                 layoutOrigin,
                 startRoomAnchor,
                 generationSeed,
                 plannedBounds,
                 graph.nodes().size(),
-                graph.edges().size(),
+                graph.treeEdges().size(),
+                graph.loopEdges().size(),
+                graph.entryNodeIds().size(),
+                analysis.sectors().size(),
+                analysis.maxDistanceToBoss(),
                 layout.nodes().size(),
                 piecePlan.corridorCount(),
                 plannedBounds.getXSpan(),
                 plannedBounds.getZSpan(),
                 (plannedBounds.getXSpan() + DungeonLayoutConstants.CELL_SIZE_X - 1) / DungeonLayoutConstants.CELL_SIZE_X,
                 (plannedBounds.getZSpan() + DungeonLayoutConstants.CELL_SIZE_Z - 1) / DungeonLayoutConstants.CELL_SIZE_Z
+        );
+        ObeliskDepths.LOGGER.debug(
+                "[OD timing] structure chunk={} graphGenerateMicros={} graphValidateMicros={} graphAnalyzeMicros={} embedMicros={} pieceCompileMicros={} overlapMicros={} totalMicros={}",
+                chunkPos,
+                (graphGenerated - generationStart) / 1_000L,
+                (graphValidated - graphGenerated) / 1_000L,
+                (graphAnalyzed - graphValidated) / 1_000L,
+                (embedded - graphAnalyzed) / 1_000L,
+                (compiled - embedded) / 1_000L,
+                (overlapChecked - compiled) / 1_000L,
+                (overlapChecked - generationStart) / 1_000L
         );
 
         return Optional.of(new GenerationStub(
@@ -161,15 +188,18 @@ public final class ObeliskDungeonStructure extends Structure {
         return value;
     }
 
-    private static BlockPos startRoomAnchor(
+    private static BlockPos primaryEntryAnchor(
+            DungeonGraph graph,
             DungeonLayoutPlan layout,
             BlockPos layoutOrigin
     ) {
         DungeonLayoutNode start = layout.nodes()
                 .stream()
-                .filter(node -> node.type() == io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomType.START)
+                .filter(node -> node.roomId().equals(graph.primaryEntryNodeId()))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Embedded layout missing START room"));
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Embedded layout missing primary entry room: " + graph.primaryEntryNodeId()
+                ));
 
         return start.blockAnchor(layoutOrigin);
     }

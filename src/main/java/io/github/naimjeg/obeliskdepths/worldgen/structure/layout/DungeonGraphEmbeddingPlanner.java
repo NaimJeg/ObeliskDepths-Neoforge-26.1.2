@@ -2,9 +2,11 @@ package io.github.naimjeg.obeliskdepths.worldgen.structure.layout;
 
 import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomType;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraph;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphAnalysis;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphAnalyzer;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphEdge;
-import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphNode;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphValidator;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonNodeAnalysis;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
@@ -13,11 +15,16 @@ import java.util.Map;
 import net.minecraft.core.BlockPos;
 
 /**
- * Thin spatial adapter from pure graph topology to debug cell/block placement.
- * The graph remains authoritative; this layer assigns temporary footprints and
- * connector sides for StructurePiece metadata and floor-only visualization.
+ * Temporary radial debug embedding for boss-rooted dungeon graphs. It assigns
+ * cell positions and connector sides only; the graph remains authoritative.
  */
 public final class DungeonGraphEmbeddingPlanner {
+    private static final int RADIAL_SPACING_CELLS = 5;
+    private static final int BASE_RADIUS_CELLS = 4;
+    private static final int EXIT_OFFSET_CELLS = -6;
+    private static final int COLLISION_STEP_CELLS = 3;
+    private static final int MAX_COLLISION_ATTEMPTS = 48;
+
     private DungeonGraphEmbeddingPlanner() {
     }
 
@@ -26,73 +33,33 @@ public final class DungeonGraphEmbeddingPlanner {
             BlockPos layoutOrigin
     ) {
         DungeonGraphValidator.validate(graph);
+        DungeonGraphAnalysis analysis = DungeonGraphAnalyzer.analyze(graph);
 
         Map<String, Draft> drafts = new LinkedHashMap<>();
         Map<String, EnumSet<DungeonConnectorSide>> connectors = new LinkedHashMap<>();
         List<DungeonLayoutEdge> edges = new ArrayList<>();
-        int cursorX = 0;
+        int sectorCount = Math.max(1, analysis.sectors().size());
 
-        for (DungeonGraphNode node : graph.criticalPathNodes()) {
+        for (var node : graph.nodes()) {
             DungeonRoomFootprint footprint = footprintFor(node.type());
-            int z = node.type() == DungeonRoomType.BOSS ? -1 : 0;
-            DungeonCellPos cellOrigin = new DungeonCellPos(cursorX, 0, z);
-
-            addDraft(drafts, connectors, new Draft(node, cellOrigin, footprint));
-            cursorX += footprint.widthCells() + spacingAfter(node.type());
+            DungeonCellPos cellOrigin = cellOriginFor(graph, analysis, node.id(), footprint, sectorCount, drafts);
+            Draft draft = new Draft(node.id(), node.type(), cellOrigin, footprint);
+            drafts.put(node.id(), draft);
+            connectors.put(node.id(), EnumSet.noneOf(DungeonConnectorSide.class));
         }
 
-        int branchIndex = 0;
-        Map<String, Integer> branchSideCounts = new LinkedHashMap<>();
-
         for (DungeonGraphEdge graphEdge : graph.edges()) {
-            DungeonGraphNode target = graph.requireNode(graphEdge.targetNodeId());
-
-            if (target.criticalPath()) {
-                addEmbeddedEdge(edges, connectors, drafts, graphEdge);
-                continue;
-            }
-
-            Draft parent = drafts.get(graphEdge.sourceNodeId());
-            if (parent == null) {
-                throw new IllegalArgumentException(
-                        "Branch parent has not been spatially embedded: " + graphEdge.sourceNodeId()
-                );
-            }
-
-            DungeonRoomFootprint footprint = footprintFor(target.type());
-            boolean south = branchIndex % 2 == 0;
-            String sideKey = graphEdge.sourceNodeId() + ":" + (south ? "south" : "north");
-            int sideCount = branchSideCounts.getOrDefault(sideKey, 0);
-            branchSideCounts.put(sideKey, sideCount + 1);
-            int branchZ = south
-                    ? parent.cellOrigin.z()
-                    + parent.footprint.depthCells()
-                    + 2
-                    + sideCount * (footprint.depthCells() + 2)
-                    : parent.cellOrigin.z()
-                    - footprint.depthCells()
-                    - 2
-                    - sideCount * (footprint.depthCells() + 2);
-
-            addDraft(drafts, connectors, new Draft(
-                    target,
-                    new DungeonCellPos(parent.cellOrigin.x(), 0, branchZ),
-                    footprint
-            ));
             addEmbeddedEdge(edges, connectors, drafts, graphEdge);
-            branchIndex++;
         }
 
         List<DungeonLayoutNode> nodes = drafts.values()
                 .stream()
                 .map(draft -> new DungeonLayoutNode(
-                        draft.node.id(),
-                        draft.node.type(),
+                        draft.id,
+                        draft.type,
                         draft.cellOrigin,
                         draft.footprint,
-                        connectors.get(draft.node.id()),
-                        draft.node.criticalPath(),
-                        draft.node.branchCap()
+                        connectors.get(draft.id)
                 ))
                 .toList();
 
@@ -105,13 +72,89 @@ public final class DungeonGraphEmbeddingPlanner {
         return plan;
     }
 
-    private static void addDraft(
-            Map<String, Draft> drafts,
-            Map<String, EnumSet<DungeonConnectorSide>> connectors,
-            Draft draft
+    private static DungeonCellPos cellOriginFor(
+            DungeonGraph graph,
+            DungeonGraphAnalysis analysis,
+            String nodeId,
+            DungeonRoomFootprint footprint,
+            int sectorCount,
+            Map<String, Draft> drafts
     ) {
-        drafts.put(draft.node.id(), draft);
-        connectors.put(draft.node.id(), EnumSet.noneOf(DungeonConnectorSide.class));
+        if (nodeId.equals(graph.rootNodeId())) {
+            return new DungeonCellPos(-footprint.widthCells() / 2, 0, -footprint.depthCells() / 2);
+        }
+
+        if (nodeId.equals(graph.exitNodeId())) {
+            return resolveCollision(
+                    new DungeonCellPos(-footprint.widthCells() / 2, 0, EXIT_OFFSET_CELLS),
+                    footprint,
+                    0.0D,
+                    drafts
+            );
+        }
+
+        DungeonNodeAnalysis node = analysis.requireNode(nodeId);
+        int sector = node.sectorIndex().orElseThrow(() ->
+                new IllegalArgumentException("Embedded node missing sector: " + nodeId));
+        int distance = Math.max(1, node.distanceToBoss());
+        double angle = Math.PI * 2.0D * sector / sectorCount;
+        int radius = BASE_RADIUS_CELLS + RADIAL_SPACING_CELLS * distance;
+        int centerX = (int) Math.round(Math.cos(angle) * radius);
+        int centerZ = (int) Math.round(Math.sin(angle) * radius);
+        DungeonCellPos base = new DungeonCellPos(
+                centerX - footprint.widthCells() / 2,
+                0,
+                centerZ - footprint.depthCells() / 2
+        );
+
+        return resolveCollision(base, footprint, angle, drafts);
+    }
+
+    private static DungeonCellPos resolveCollision(
+            DungeonCellPos base,
+            DungeonRoomFootprint footprint,
+            double angle,
+            Map<String, Draft> drafts
+    ) {
+        for (int attempt = 0; attempt <= MAX_COLLISION_ATTEMPTS; attempt++) {
+            DungeonCellPos candidate = offset(base, angle, attempt);
+            DungeonCellBox candidateBox = footprint.toCellBox(candidate);
+            boolean overlaps = drafts.values()
+                    .stream()
+                    .map(Draft::cellBox)
+                    .anyMatch(candidateBox::intersects);
+
+            if (!overlaps) {
+                return candidate;
+            }
+        }
+
+        throw new IllegalArgumentException(
+                "Unable to resolve radial embedding collision near " + base
+        );
+    }
+
+    private static DungeonCellPos offset(
+            DungeonCellPos base,
+            double angle,
+            int attempt
+    ) {
+        if (attempt == 0) {
+            return base;
+        }
+
+        int magnitude = (attempt + 1) / 2 * COLLISION_STEP_CELLS;
+        int sign = attempt % 2 == 0 ? -1 : 1;
+        int tangentX = (int) Math.round(-Math.sin(angle) * magnitude * sign);
+        int tangentZ = (int) Math.round(Math.cos(angle) * magnitude * sign);
+        int radialX = (attempt / 8) * (int) Math.round(Math.cos(angle) * COLLISION_STEP_CELLS);
+        int radialZ = (attempt / 8) * (int) Math.round(Math.sin(angle) * COLLISION_STEP_CELLS);
+
+        return new DungeonCellPos(
+                base.x() + tangentX + radialX,
+                base.y(),
+                base.z() + tangentZ + radialZ
+        );
     }
 
     private static void addEmbeddedEdge(
@@ -135,12 +178,13 @@ public final class DungeonGraphEmbeddingPlanner {
         connectors.get(graphEdge.targetNodeId()).add(targetSide);
 
         edges.add(new DungeonLayoutEdge(
-                graphEdge.id().replaceFirst("^edge_", "corridor_"),
+                graphEdge.id().replaceFirst("^(tree|loop|secret)_", "corridor_$1_"),
                 graphEdge.sourceNodeId(),
                 graphEdge.targetNodeId(),
                 sourceSide,
                 targetSide,
-                1
+                graphEdge.kind() == io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphEdgeKind.LOOP ? 1 : 1,
+                graphEdge.kind()
         ));
     }
 
@@ -170,19 +214,14 @@ public final class DungeonGraphEmbeddingPlanner {
         };
     }
 
-    private static int spacingAfter(DungeonRoomType type) {
-        return switch (type) {
-            case START -> 2;
-            case BOSS -> 2;
-            case EXIT -> 0;
-            case COMBAT, TREASURE -> 2;
-        };
-    }
-
     private record Draft(
-            DungeonGraphNode node,
+            String id,
+            DungeonRoomType type,
             DungeonCellPos cellOrigin,
             DungeonRoomFootprint footprint
     ) {
+        private DungeonCellBox cellBox() {
+            return this.footprint.toCellBox(this.cellOrigin);
+        }
     }
 }

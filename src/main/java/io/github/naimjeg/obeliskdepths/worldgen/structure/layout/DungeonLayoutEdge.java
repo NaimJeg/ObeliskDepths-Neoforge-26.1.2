@@ -1,12 +1,15 @@
 package io.github.naimjeg.obeliskdepths.worldgen.structure.layout;
 
+import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphEdgeKind;
+
 public record DungeonLayoutEdge(
         String id,
         String fromRoomId,
         String toRoomId,
         DungeonConnectorSide fromSide,
         DungeonConnectorSide toSide,
-        int widthCells
+        int widthCells,
+        DungeonGraphEdgeKind kind
 ) {
     public DungeonLayoutEdge {
         if (id == null || id.isBlank()) {
@@ -33,11 +36,10 @@ public record DungeonLayoutEdge(
             throw new IllegalArgumentException("Layout edge width must be positive: " + id);
         }
 
-        if (fromSide.opposite() != toSide) {
-            throw new IllegalArgumentException(
-                    "Preliminary layout edges must use opposite connector sides: " + id
-            );
+        if (kind == null) {
+            throw new IllegalArgumentException("Layout edge kind must be present: " + id);
         }
+
     }
 
     public boolean directOppositeConnection() {

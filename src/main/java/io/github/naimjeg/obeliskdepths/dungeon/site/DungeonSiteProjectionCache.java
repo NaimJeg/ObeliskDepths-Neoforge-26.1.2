@@ -1,7 +1,7 @@
 package io.github.naimjeg.obeliskdepths.dungeon.site;
 
-import io.github.naimjeg.obeliskdepths.dungeon.site.reader.GeneratedDungeonSiteReader;
 import io.github.naimjeg.obeliskdepths.dungeon.state.DungeonManagerSavedData;
+import io.github.naimjeg.obeliskdepths.dungeon.site.reader.GeneratedDungeonSiteReader;
 import net.minecraft.server.level.ServerLevel;
 
 import java.util.HashMap;
@@ -20,9 +20,10 @@ public final class DungeonSiteProjectionCache {
      * Read a site projection in authoritative order.
      *
      * Priority:
-     * 1. Actual StructureStart projection.
-     * 2. Saved snapshot.
-     * 3. Empty.
+     * 1. Actual generated StructureStart projection.
+     * 2. In-memory authoritative cache.
+     * 3. Saved snapshot that was originally derived from generated structure data.
+     * 4. Empty.
      *
      * Do not use planned prototype projection here. Planned projections are
      * debug/preview only and must not silently enter runtime reservation.
@@ -31,22 +32,16 @@ public final class DungeonSiteProjectionCache {
             ServerLevel level,
             DungeonSiteKey key
     ) {
-        /*
-         * Always check the actual StructureStart first. A saved snapshot is an
-         * authoritative fallback, but it must never hide generated piece
-         * metadata if the start is now available.
-         */
-        Optional<DungeonSite> generated =
-                GeneratedDungeonSiteReader.readGeneratedSite(level, key);
+        Optional<ResolvedDungeonSite> generated =
+                GeneratedDungeonSiteReader.readGeneratedSite(level, key)
+                        .map(site -> new ResolvedDungeonSite(
+                                site,
+                                DungeonSiteProjectionSource.GENERATED_STRUCTURE_START
+                        ));
 
         if (generated.isPresent()) {
-            ResolvedDungeonSite resolved = new ResolvedDungeonSite(
-                    generated.get(),
-                    DungeonSiteProjectionSource.GENERATED_STRUCTURE_START
-            );
-
-            putAuthoritative(level, resolved);
-            return Optional.of(resolved);
+            putAuthoritative(level, generated.get());
+            return generated;
         }
 
         Map<DungeonSiteKey, ResolvedDungeonSite> byKey = CACHE.get(level);

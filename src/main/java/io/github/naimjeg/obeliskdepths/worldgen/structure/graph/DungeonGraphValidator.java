@@ -2,303 +2,284 @@ package io.github.naimjeg.obeliskdepths.worldgen.structure.graph;
 
 import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomType;
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
-import java.util.function.Predicate;
+import java.util.TreeSet;
 
 public final class DungeonGraphValidator {
     private DungeonGraphValidator() {
     }
 
     public static void validate(DungeonGraph graph) {
-        require(!graph.nodes().isEmpty(), "Dungeon graph must contain at least one node");
-        validateUniqueNodeIds(graph.nodes());
-        validateUniqueEdgeIds(graph.edges());
+        validateIdentifiers(graph);
+        validateRequiredNodes(graph);
+        validateRootMetadata(graph);
+        validateEntryMetadata(graph);
         validateEdges(graph);
-        validateRequiredRoomCounts(graph);
-        validateTreeShape(graph);
-        validateSemanticTerminals(graph);
-        validateCriticalPath(graph);
+        validateTreeSpanningStructure(graph);
+        validateFullConnectivity(graph);
+        validateLoops(graph);
+        DungeonGraphAnalysis analysis = DungeonGraphAnalyzer.analyze(graph);
+        validateEntryDistribution(graph, analysis);
+        validateExit(graph);
+        validateProgressionQuality(graph, analysis);
     }
 
-    private static void validateUniqueNodeIds(List<DungeonGraphNode> nodes) {
-        Set<String> seen = new HashSet<>();
+    private static void validateIdentifiers(DungeonGraph graph) {
+        require(!graph.nodes().isEmpty(), "Dungeon graph must contain at least one node");
+        Set<String> nodeIds = new HashSet<>();
+        for (DungeonGraphNode node : graph.nodes()) {
+            require(nodeIds.add(node.id()), "Duplicate graph node id: " + node.id());
+        }
 
-        for (DungeonGraphNode node : nodes) {
-            require(seen.add(node.id()), "Duplicate graph node id: " + node.id());
+        Set<String> edgeIds = new HashSet<>();
+        for (DungeonGraphEdge edge : graph.edges()) {
+            require(edgeIds.add(edge.id()), "Duplicate graph edge id: " + edge.id());
         }
     }
 
-    private static void validateUniqueEdgeIds(List<DungeonGraphEdge> edges) {
-        Set<String> seen = new HashSet<>();
+    private static void validateRequiredNodes(DungeonGraph graph) {
+        require(countType(graph, DungeonRoomType.BOSS) == 1,
+                "Dungeon graph must contain exactly one BOSS node");
+        require(countType(graph, DungeonRoomType.EXIT) == 1,
+                "Dungeon graph must contain exactly one EXIT node");
+        require(countType(graph, DungeonRoomType.START) >= 2,
+                "Dungeon graph must contain at least two START nodes");
+    }
 
-        for (DungeonGraphEdge edge : edges) {
-            require(seen.add(edge.id()), "Duplicate graph edge id: " + edge.id());
-        }
+    private static void validateRootMetadata(DungeonGraph graph) {
+        DungeonGraphNode root = graph.requireNode(graph.rootNodeId());
+        require(root.type() == DungeonRoomType.BOSS,
+                "Graph rootNodeId must point to the BOSS node: " + graph.rootNodeId());
+    }
+
+    private static void validateEntryMetadata(DungeonGraph graph) {
+        Set<String> startIds = idsOfType(graph, DungeonRoomType.START);
+        require(graph.entryNodeIds().equals(startIds),
+                "Graph entryNodeIds must contain exactly START nodes: entries="
+                        + graph.entryNodeIds() + ", starts=" + startIds);
+        require(graph.entryNodeIds().contains(graph.primaryEntryNodeId()),
+                "Graph primaryEntryNodeId must belong to entryNodeIds: " + graph.primaryEntryNodeId());
     }
 
     private static void validateEdges(DungeonGraph graph) {
-        Set<String> nodeIds = new HashSet<>();
-
-        for (DungeonGraphNode node : graph.nodes()) {
-            nodeIds.add(node.id());
-        }
+        Set<String> nodeIds = graph.nodes().stream()
+                .map(DungeonGraphNode::id)
+                .collect(java.util.stream.Collectors.toSet());
+        Set<String> physicalByKind = new HashSet<>();
 
         for (DungeonGraphEdge edge : graph.edges()) {
             require(!edge.sourceNodeId().equals(edge.targetNodeId()),
-                    "Graph edge self-loop: " + edge.id() + " node=" + edge.sourceNodeId());
+                    "Graph edge self-edge: " + edge.id() + " node=" + edge.sourceNodeId());
             require(nodeIds.contains(edge.sourceNodeId()),
                     "Graph edge references missing source node: " + edge.id() + " source=" + edge.sourceNodeId());
             require(nodeIds.contains(edge.targetNodeId()),
                     "Graph edge references missing target node: " + edge.id() + " target=" + edge.targetNodeId());
+
+            String key = physicalKey(edge.sourceNodeId(), edge.targetNodeId()) + ":" + edge.kind();
+            require(physicalByKind.add(key),
+                    "Duplicate physical graph connection of same kind: edge=" + edge.id()
+                            + " endpoints=" + edge.sourceNodeId() + "/" + edge.targetNodeId()
+                            + " kind=" + edge.kind());
         }
     }
 
-    private static void validateRequiredRoomCounts(DungeonGraph graph) {
-        require(countNodes(graph, node -> node.type() == DungeonRoomType.START) == 1,
-                "Dungeon graph must contain exactly one START node");
-        require(countNodes(graph, node -> node.type() == DungeonRoomType.BOSS) == 1,
-                "Dungeon graph must contain exactly one BOSS node");
-        require(countNodes(graph, node -> node.type() == DungeonRoomType.EXIT) == 1,
-                "Dungeon graph must contain exactly one EXIT node");
-    }
+    private static void validateTreeSpanningStructure(DungeonGraph graph) {
+        Map<String, Integer> incomingTreeParents = new LinkedHashMap<>();
+        Set<String> normalNodeIds = normalNodeIds(graph);
+        int normalTreeEdges = 0;
 
-    private static void validateTreeShape(DungeonGraph graph) {
-        Map<String, List<String>> outgoing = new HashMap<>();
-        Map<String, Integer> incomingCounts = new HashMap<>();
-
-        for (DungeonGraphNode node : graph.nodes()) {
-            outgoing.put(node.id(), new ArrayList<>());
-            incomingCounts.put(node.id(), 0);
+        for (String nodeId : normalNodeIds) {
+            incomingTreeParents.put(nodeId, 0);
         }
 
-        for (DungeonGraphEdge edge : graph.edges()) {
-            outgoing.get(edge.sourceNodeId()).add(edge.targetNodeId());
-            incomingCounts.put(edge.targetNodeId(), incomingCounts.get(edge.targetNodeId()) + 1);
-        }
-
-        List<String> roots = incomingCounts.entrySet()
-                .stream()
-                .filter(entry -> entry.getValue() == 0)
-                .map(Map.Entry::getKey)
-                .toList();
-
-        require(roots.size() == 1,
-                "Dungeon graph must have exactly one root/connected component, roots=" + roots);
-        DungeonGraphNode start = onlyNode(graph, node -> node.type() == DungeonRoomType.START);
-        require(roots.get(0).equals(start.id()),
-                "Dungeon graph root must be START: root=" + roots.get(0) + " start=" + start.id());
-
-        for (DungeonGraphNode node : graph.nodes()) {
-            int incoming = incomingCounts.get(node.id());
-            if (node.type() == DungeonRoomType.START) {
-                require(incoming == 0, "START node has incoming edges: " + node.id() + " incoming=" + incoming);
-            } else {
-                require(incoming == 1, "Non-root node must have exactly one incoming edge: "
-                        + node.id() + " incoming=" + incoming);
+        for (DungeonGraphEdge edge : graph.treeEdges()) {
+            if (edge.targetNodeId().equals(graph.exitNodeId())) {
+                continue;
             }
+            require(normalNodeIds.contains(edge.sourceNodeId()) && normalNodeIds.contains(edge.targetNodeId()),
+                    "TREE edge in radial tree must connect normal dungeon nodes: " + edge.id());
+            incomingTreeParents.put(edge.targetNodeId(), incomingTreeParents.get(edge.targetNodeId()) + 1);
+            normalTreeEdges++;
         }
 
-        validateAcyclic(graph, outgoing);
+        require(incomingTreeParents.get(graph.rootNodeId()) == 0,
+                "BOSS must have no TREE parent in radial tree: " + graph.rootNodeId());
 
-        require(graph.edges().size() == graph.nodes().size() - 1,
-                "Dungeon graph edge count must equal node count minus one: nodes="
-                        + graph.nodes().size() + ", edges=" + graph.edges().size());
+        for (String nodeId : normalNodeIds) {
+            if (nodeId.equals(graph.rootNodeId())) {
+                continue;
+            }
+            require(incomingTreeParents.get(nodeId) == 1,
+                    "Every non-boss normal node must have exactly one TREE parent: "
+                            + nodeId + " parents=" + incomingTreeParents.get(nodeId));
+        }
 
-        validateConnected(graph, outgoing, start.id());
+        require(normalTreeEdges == normalNodeIds.size() - 1,
+                "TREE edges must form a boss-rooted spanning tree over normal nodes: normalNodes="
+                        + normalNodeIds.size() + ", treeEdges=" + normalTreeEdges);
+        require(treeReachableCount(graph) == normalNodeIds.size(),
+                "TREE radial hierarchy must reach every normal node from BOSS");
     }
 
-    private static void validateConnected(
-            DungeonGraph graph,
-            Map<String, List<String>> outgoing,
-            String rootId
-    ) {
+    private static void validateFullConnectivity(DungeonGraph graph) {
         Set<String> visited = new HashSet<>();
         Queue<String> queue = new ArrayDeque<>();
-        queue.add(rootId);
+        queue.add(graph.rootNodeId());
 
         while (!queue.isEmpty()) {
             String current = queue.remove();
-
             if (!visited.add(current)) {
                 continue;
             }
-
-            queue.addAll(outgoing.getOrDefault(current, List.of()));
+            queue.addAll(graph.neighbors(current));
         }
 
         require(visited.size() == graph.nodes().size(),
-                "Dungeon graph must be connected from START: visited="
+                "Complete dungeon graph must be connected: visited="
                         + visited.size() + ", nodes=" + graph.nodes().size());
     }
 
-    private static void validateAcyclic(
+    private static void validateLoops(DungeonGraph graph) {
+        for (DungeonGraphEdge loop : graph.loopEdges()) {
+            require(!loop.sourceNodeId().equals(graph.exitNodeId()) && !loop.targetNodeId().equals(graph.exitNodeId()),
+                    "LOOP edge must not connect EXIT: " + loop.id());
+            require(!graph.containsPhysicalConnection(loop.sourceNodeId(), loop.targetNodeId(), DungeonGraphEdgeKind.TREE),
+                    "LOOP edge duplicates TREE physical connection: " + loop.id());
+        }
+
+        int cyclomatic = graph.edges().size() - graph.nodes().size() + 1;
+        require(cyclomatic >= 1, "Generated dungeon graph must contain at least one genuine cycle");
+    }
+
+    private static void validateEntryDistribution(
             DungeonGraph graph,
-            Map<String, List<String>> outgoing
+            DungeonGraphAnalysis analysis
     ) {
-        Set<String> visiting = new HashSet<>();
+        for (String entry : graph.entryNodeIds()) {
+            DungeonNodeAnalysis node = analysis.requireNode(entry);
+            require(node.distanceToBoss() >= 3,
+                    "START nodes must not be directly adjacent to BOSS: " + entry
+                            + " distance=" + node.distanceToBoss());
+            require(node.treeDepth() >= DungeonGraphGenerationConfig.DEFAULT.minArmDepth(),
+                    "START nodes must be in outer depth bands: " + entry
+                            + " treeDepth=" + node.treeDepth()
+                            + " minArmDepth=" + DungeonGraphGenerationConfig.DEFAULT.minArmDepth());
+        }
+
+        TreeSet<Integer> sectors = new TreeSet<>();
+        for (String entry : graph.entryNodeIds()) {
+            OptionalIntAdapter.requirePresent(analysis.requireNode(entry).sectorIndex(),
+                    "START node missing sector analysis: " + entry);
+            int sector = analysis.requireNode(entry).sectorIndex().getAsInt();
+            require(sectors.add(sector), "START nodes must occupy distinct sectors: sector=" + sector);
+        }
+    }
+
+    private static void validateExit(DungeonGraph graph) {
+        DungeonGraphNode exit = graph.requireNode(graph.exitNodeId());
+        require(exit.type() == DungeonRoomType.EXIT,
+                "Graph exitNodeId must point to EXIT node: " + graph.exitNodeId());
+        require(!graph.entryNodeIds().contains(graph.exitNodeId()),
+                "EXIT must not be an entry node: " + graph.exitNodeId());
+        require(graph.incidentEdges(graph.exitNodeId()).size() == 1,
+                "EXIT must have exactly one edge attached to BOSS: " + graph.exitNodeId());
+        DungeonGraphEdge edge = graph.incidentEdges(graph.exitNodeId()).get(0);
+        require(edge.kind() == DungeonGraphEdgeKind.TREE
+                        && edge.sourceNodeId().equals(graph.rootNodeId())
+                        && edge.targetNodeId().equals(graph.exitNodeId()),
+                "EXIT must be attached by BOSS -> EXIT TREE edge: " + edge.id());
+    }
+
+    private static void validateProgressionQuality(
+            DungeonGraph graph,
+            DungeonGraphAnalysis analysis
+    ) {
+        DungeonGraphGenerationConfig config = DungeonGraphGenerationConfig.DEFAULT;
+        require(graph.nodes().size() <= config.maxNodeCount(),
+                "Dungeon graph exceeds max node count: nodes="
+                        + graph.nodes().size() + ", max=" + config.maxNodeCount());
+
+        for (DungeonGraphNode node : graph.nodes()) {
+            DungeonNodeAnalysis nodeAnalysis = analysis.requireNode(node.id());
+            if (!node.id().equals(graph.rootNodeId()) && !node.id().equals(graph.exitNodeId())) {
+                require(nodeAnalysis.totalDegree() <= config.maxOrdinaryDegree(),
+                        "Ordinary node exceeds max degree: "
+                                + node.id() + " degree=" + nodeAnalysis.totalDegree());
+            }
+            if (node.type() == DungeonRoomType.TREASURE) {
+                require(nodeAnalysis.totalDegree() <= 1,
+                        "TREASURE nodes must be terminal: " + node.id()
+                                + " degree=" + nodeAnalysis.totalDegree());
+            }
+        }
+
+        for (String entry : graph.entryNodeIds()) {
+            require(analysis.requireNode(entry).distanceToBoss() < Integer.MAX_VALUE,
+                    "START cannot reach BOSS: " + entry);
+        }
+    }
+
+    private static int treeReachableCount(DungeonGraph graph) {
         Set<String> visited = new HashSet<>();
+        Queue<String> queue = new ArrayDeque<>();
+        queue.add(graph.rootNodeId());
 
-        for (DungeonGraphNode node : graph.nodes()) {
-            require(!hasCycle(node.id(), outgoing, visiting, visited),
-                    "Dungeon graph must be acyclic; cycle includes or is reachable from node " + node.id());
-        }
-    }
-
-    private static boolean hasCycle(
-            String nodeId,
-            Map<String, List<String>> outgoing,
-            Set<String> visiting,
-            Set<String> visited
-    ) {
-        if (visiting.contains(nodeId)) {
-            return true;
-        }
-
-        if (visited.contains(nodeId)) {
-            return false;
-        }
-
-        visiting.add(nodeId);
-
-        for (String target : outgoing.getOrDefault(nodeId, List.of())) {
-            if (hasCycle(target, outgoing, visiting, visited)) {
-                return true;
-            }
-        }
-
-        visiting.remove(nodeId);
-        visited.add(nodeId);
-        return false;
-    }
-
-    private static void validateSemanticTerminals(DungeonGraph graph) {
-        DungeonGraphNode exit = onlyNode(graph, node -> node.type() == DungeonRoomType.EXIT);
-        require(graph.outgoingEdges(exit.id()).isEmpty(),
-                "EXIT node must have no outgoing edges: " + exit.id());
-
-        for (DungeonGraphNode node : graph.nodes()) {
-            if (node.branchCap()) {
-                require(graph.outgoingEdges(node.id()).isEmpty(),
-                        "Branch cap node must have no outgoing edges: " + node.id());
-            }
-        }
-    }
-
-    private static void validateCriticalPath(DungeonGraph graph) {
-        List<DungeonGraphNode> critical = graph.criticalPathNodes();
-        require(!critical.isEmpty(), "Dungeon graph critical path must be nonempty");
-        require(critical.size() >= 4,
-                "Dungeon graph critical path must contain START, at least one COMBAT, BOSS, and EXIT");
-
-        for (int index = 0; index < critical.size(); index++) {
-            DungeonGraphNode node = critical.get(index);
-            require(node.criticalPathIndex().isPresent(),
-                    "Critical path node missing index: " + node.id());
-            require(node.criticalPathIndex().getAsInt() == index,
-                    "Critical path index gap or duplicate at node " + node.id()
-                            + ": expected=" + index
-                            + ", actual=" + node.criticalPathIndex().getAsInt());
-        }
-
-        require(critical.get(0).type() == DungeonRoomType.START,
-                "Critical path must start with START node: " + critical.get(0).id());
-        require(critical.get(critical.size() - 1).type() == DungeonRoomType.EXIT,
-                "Critical path must end with EXIT node: " + critical.get(critical.size() - 1).id());
-
-        int bossIndex = -1;
-        int exitIndex = -1;
-
-        for (int index = 0; index < critical.size(); index++) {
-            DungeonGraphNode node = critical.get(index);
-
-            if (node.type() == DungeonRoomType.BOSS) {
-                bossIndex = index;
-            }
-
-            if (node.type() == DungeonRoomType.EXIT) {
-                exitIndex = index;
-            }
-
-            if (index > 0 && index < critical.size() - 2) {
-                require(node.type() == DungeonRoomType.COMBAT,
-                        "Critical path middle node must be COMBAT before BOSS: "
-                                + node.id() + " type=" + node.type());
-            }
-        }
-
-        require(bossIndex >= 0, "Critical path must include BOSS node");
-        require(exitIndex >= 0, "Critical path must include EXIT node");
-        require(bossIndex == critical.size() - 2,
-                "BOSS must appear immediately before EXIT on critical path: bossIndex="
-                        + bossIndex + ", criticalLength=" + critical.size());
-        require(bossIndex < exitIndex,
-                "BOSS must appear before EXIT on critical path: bossIndex="
-                        + bossIndex + ", exitIndex=" + exitIndex);
-
-        Set<String> criticalIds = new HashSet<>();
-
-        for (DungeonGraphNode node : critical) {
-            criticalIds.add(node.id());
-        }
-
-        for (DungeonGraphNode node : graph.nodes()) {
-            if (!node.criticalPath()) {
-                require(node.criticalPathIndex().isEmpty(),
-                        "Branch node incorrectly has critical path index: " + node.id());
-                require(node.type() != DungeonRoomType.START
-                                && node.type() != DungeonRoomType.BOSS
-                                && node.type() != DungeonRoomType.EXIT,
-                        "Required path room type is not marked critical: "
-                                + node.id() + " type=" + node.type());
-            }
-        }
-
-        for (int index = 0; index < critical.size() - 1; index++) {
-            DungeonGraphNode source = critical.get(index);
-            DungeonGraphNode target = critical.get(index + 1);
-            boolean connected = graph.outgoingEdges(source.id())
-                    .stream()
-                    .anyMatch(edge -> edge.targetNodeId().equals(target.id()));
-
-            require(connected,
-                    "Critical path continuity missing edge: "
-                            + source.id() + " -> " + target.id());
-        }
-
-        for (DungeonGraphEdge edge : graph.edges()) {
-            if (!criticalIds.contains(edge.sourceNodeId()) || !criticalIds.contains(edge.targetNodeId())) {
+        while (!queue.isEmpty()) {
+            String current = queue.remove();
+            if (!visited.add(current)) {
                 continue;
             }
-
-            DungeonGraphNode source = graph.requireNode(edge.sourceNodeId());
-            DungeonGraphNode target = graph.requireNode(edge.targetNodeId());
-            require(source.criticalPathIndex().getAsInt() + 1 == target.criticalPathIndex().getAsInt(),
-                    "Critical path edge skips or reverses order: " + edge.id()
-                            + " source=" + edge.sourceNodeId()
-                            + " target=" + edge.targetNodeId());
+            for (DungeonGraphEdge edge : graph.treeEdges()) {
+                if (edge.sourceNodeId().equals(current) && !edge.targetNodeId().equals(graph.exitNodeId())) {
+                    queue.add(edge.targetNodeId());
+                }
+            }
         }
+
+        return visited.size();
     }
 
-    private static long countNodes(
-            DungeonGraph graph,
-            Predicate<DungeonGraphNode> predicate
-    ) {
-        return graph.nodes().stream().filter(predicate).count();
+    private static Set<String> normalNodeIds(DungeonGraph graph) {
+        Set<String> result = new HashSet<>();
+        for (DungeonGraphNode node : graph.nodes()) {
+            if (!node.id().equals(graph.exitNodeId())) {
+                result.add(node.id());
+            }
+        }
+        return result;
     }
 
-    private static DungeonGraphNode onlyNode(
+    private static long countType(
             DungeonGraph graph,
-            Predicate<DungeonGraphNode> predicate
+            DungeonRoomType type
     ) {
-        List<DungeonGraphNode> nodes = graph.nodes().stream().filter(predicate).toList();
-        require(nodes.size() == 1, "Expected exactly one matching graph node, found=" + nodes.size());
-        return nodes.get(0);
+        return graph.nodes().stream().filter(node -> node.type() == type).count();
+    }
+
+    private static Set<String> idsOfType(
+            DungeonGraph graph,
+            DungeonRoomType type
+    ) {
+        Set<String> result = new java.util.LinkedHashSet<>();
+        for (DungeonGraphNode node : graph.nodes()) {
+            if (node.type() == type) {
+                result.add(node.id());
+            }
+        }
+        return java.util.Collections.unmodifiableSet(result);
+    }
+
+    private static String physicalKey(
+            String first,
+            String second
+    ) {
+        return first.compareTo(second) <= 0 ? first + "|" + second : second + "|" + first;
     }
 
     private static void require(
@@ -307,6 +288,18 @@ public final class DungeonGraphValidator {
     ) {
         if (!condition) {
             throw new DungeonGraphValidationException(message);
+        }
+    }
+
+    private static final class OptionalIntAdapter {
+        private OptionalIntAdapter() {
+        }
+
+        private static void requirePresent(
+                java.util.OptionalInt value,
+                String message
+        ) {
+            require(value.isPresent(), message);
         }
     }
 }

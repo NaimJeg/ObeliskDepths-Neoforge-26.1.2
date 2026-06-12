@@ -1,5 +1,6 @@
 package io.github.naimjeg.obeliskdepths.dungeon.site.reader;
 
+import io.github.naimjeg.obeliskdepths.ObeliskDepths;
 import io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSite;
 import io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSiteKey;
 import net.minecraft.core.BlockPos;
@@ -30,12 +31,39 @@ public final class GeneratedDungeonSiteReader {
             BlockPos origin,
             Predicate<DungeonSiteKey> canUseSite
     ) {
-        return DungeonStructureLocator.findNearestStart(
-                        level,
-                        origin,
-                        canUseSite
-                )
-                .flatMap(key -> readGeneratedSite(level, key));
+        for (DungeonSiteKey key : DungeonStructureLocator.findNearestStarts(level, origin, canUseSite)) {
+            try {
+                Optional<DungeonSite> site = readGeneratedSite(level, key);
+
+                if (site.isEmpty()) {
+                    ObeliskDepths.LOGGER.debug(
+                            "[OD locator] rejected candidate reason=missing_generated_structure key={}",
+                            key
+                    );
+                    continue;
+                }
+
+                if (!validGeneratedSite(site.get())) {
+                    ObeliskDepths.LOGGER.warn(
+                            "[OD locator] rejected candidate reason=incomplete_generated_metadata key={} rooms={} start={}",
+                            key,
+                            site.get().rooms().size(),
+                            site.get().startPos()
+                    );
+                    continue;
+                }
+
+                return site;
+            } catch (RuntimeException exception) {
+                ObeliskDepths.LOGGER.warn(
+                        "[OD locator] rejected candidate reason=invalid_generated_projection key={} message={}",
+                        key,
+                        exception.getMessage()
+                );
+            }
+        }
+
+        return Optional.empty();
     }
 
     public static Optional<DungeonSite> readGeneratedSite(
@@ -44,5 +72,11 @@ public final class GeneratedDungeonSiteReader {
     ) {
         return DungeonStructureStartReader.read(level, key)
                 .map(start -> GeneratedDungeonSiteProjector.project(key, start));
+    }
+
+    private static boolean validGeneratedSite(DungeonSite site) {
+        return !site.rooms().isEmpty()
+                && site.primaryEntryRoom().isPresent()
+                && site.primaryEntryRoom().get().contains(site.startPos());
     }
 }

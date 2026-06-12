@@ -9,9 +9,7 @@ public record DungeonLayoutNode(
         DungeonRoomType type,
         DungeonCellPos cellOrigin,
         DungeonRoomFootprint footprint,
-        EnumSet<DungeonConnectorSide> connectorSides,
-        boolean criticalPath,
-        boolean branchCap
+        EnumSet<DungeonConnectorSide> connectorSides
 ) {
     public DungeonLayoutNode {
         if (roomId == null || roomId.isBlank()) {
@@ -40,11 +38,6 @@ public record DungeonLayoutNode(
             );
         }
 
-        if (branchCap && connectorSides.size() != 1) {
-            throw new IllegalArgumentException(
-                    "Branch cap nodes must have exactly one connector: " + roomId
-            );
-        }
     }
 
     public DungeonConnectorShapeType connectorShapeType() {

@@ -16,7 +16,8 @@ public final class DungeonPiecePlanEmitter {
                 ObeliskDungeonPieceRole.SITE,
                 "site",
                 plan.layoutOrigin(),
-                plan.siteBounds()
+                plan.siteBounds(),
+                false
         ));
 
         for (DungeonPieceMetadata piece : plan.pieces()) {
@@ -24,7 +25,8 @@ public final class DungeonPiecePlanEmitter {
                     piece.role(),
                     piece.id(),
                     piece.anchor(),
-                    piece.bounds()
+                    piece.bounds(),
+                    piece.primaryEntry()
             ));
         }
     }

@@ -1,6 +1,7 @@
 package io.github.naimjeg.obeliskdepths.dungeon.instance;
 
 import io.github.naimjeg.obeliskdepths.dungeon.id.DungeonInstanceId;
+import io.github.naimjeg.obeliskdepths.dungeon.site.DungeonGeneratedRoom;
 import io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSite;
 import io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSiteProjectionCache;
 import io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSiteUsageStatus;
@@ -13,27 +14,38 @@ import net.minecraft.server.level.ServerLevel;
 import java.util.Optional;
 import java.util.UUID;
 
+/*
+ * ARCHITECTURAL INVARIANT — NO RUNTIME DUNGEON GENERATION
+ *
+ * Physical dungeon geometry is produced exclusively by Minecraft's
+ * structure/chunk world-generation pipeline.
+ *
+ * Runtime code may discover, validate, reserve, load, and enter an already
+ * generated dungeon site. Runtime code must never create a physical site plan,
+ * place or repair dungeon blocks, materialize structure pieces, or promote a
+ * planned prototype to authoritative generated-site metadata.
+ *
+ * Loading an already-generated chunk is allowed. Writing dungeon geometry
+ * because of portal use, reservation, teleportation, session creation, room
+ * entry, or chunk loading is strictly forbidden.
+ */
 public final class DungeonInstanceService {
     private DungeonInstanceService() {
     }
 
     /*
-     * Authoritative site reservation model:
+     * This method reserves an existing generated site only.
      *
-     * Runtime reserves an unreached vanilla-generated dungeon site and creates
-     * instance state for it. It does not generate terrain or accept planned
-     * prototype projections as real dungeon metadata.
-     *
-     * Worldgen owns physical geometry: rooms, corridors, flat debug planes today,
-     * and later .nbt template-backed pieces. Runtime only binds to the projected
-     * DungeonSite contract: site key, bounds, start position, generated room
-     * ids/types/bounds/anchors, and future connector metadata.
+     * Do not add planning, template placement, block writes, piece materialization,
+     * terrain repair, or fallback generation here. If no suitable generated site
+     * exists, allocation must fail without modifying dungeon geometry.
      */
     public static Optional<DungeonInstance> reserveNearestUnreachedWorldgenSite(
             ServerLevel dungeonLevel,
             BlockPos origin,
             DungeonDifficulty difficulty
     ) {
+        long startNanos = System.nanoTime();
         DungeonManagerSavedData data = DungeonManagerSavedData.get(dungeonLevel);
 
         Optional<ResolvedDungeonSite> resolved =
@@ -45,24 +57,43 @@ public final class DungeonInstanceService {
 
         if (resolved.isEmpty()) {
             io.github.naimjeg.obeliskdepths.ObeliskDepths.LOGGER.warn(
-                    "No authoritative dungeon site found near origin={} in level={}. " +
-                            "Check structure JSON, biome tag, placement, generated chunk/structure-start lookup, " +
-                            "or use debug commands to enter/warm the ObeliskDepths dimension. " +
-                            "Runtime will not fallback to prototype metadata.",
+                    "[OD reservation] no generated dungeon site available origin={} elapsedMicros={}",
                     origin,
-                    dungeonLevel.dimension().identifier()
+                    (System.nanoTime() - startNanos) / 1_000L
             );
-
             return Optional.empty();
         }
 
         if (!resolved.get().authoritative()) {
-            throw new IllegalStateException(
-                    "Runtime dungeon reservation requires authoritative worldgen site metadata."
+            io.github.naimjeg.obeliskdepths.ObeliskDepths.LOGGER.warn(
+                    "[OD reservation] rejected non-authoritative site source={} key={}",
+                    resolved.get().source(),
+                    resolved.get().site().key()
             );
+            return Optional.empty();
         }
 
         DungeonSite site = resolved.get().site();
+
+        if (data.isSiteReserved(site.key())) {
+            io.github.naimjeg.obeliskdepths.ObeliskDepths.LOGGER.warn(
+                    "[OD reservation] reservation conflict site={}",
+                    site.key()
+            );
+            return Optional.empty();
+        }
+
+        Optional<DungeonGeneratedRoom> primaryEntry = site.primaryEntryRoom();
+
+        if (primaryEntry.isEmpty() || !primaryEntry.get().contains(site.startPos())) {
+            io.github.naimjeg.obeliskdepths.ObeliskDepths.LOGGER.warn(
+                    "[OD reservation] rejected generated site with invalid primary entry site={} start={} source={}",
+                    site.key(),
+                    site.startPos(),
+                    resolved.get().source()
+            );
+            return Optional.empty();
+        }
 
         DungeonInstance instance = data.reserveSiteForNewInstance(
                 difficulty,
@@ -70,10 +101,14 @@ public final class DungeonInstanceService {
                 dungeonLevel.getGameTime()
         );
 
-        DungeonSiteProjectionCache.putAuthoritative(
-                dungeonLevel,
-                site,
-                resolved.get().source()
+        DungeonSiteProjectionCache.putAuthoritative(dungeonLevel, resolved.get());
+
+        io.github.naimjeg.obeliskdepths.ObeliskDepths.LOGGER.debug(
+                "[OD reservation] reserved generated site={} source={} instance={} elapsedMicros={}",
+                site.key(),
+                resolved.get().source(),
+                instance.id(),
+                (System.nanoTime() - startNanos) / 1_000L
         );
 
         return Optional.of(instance);

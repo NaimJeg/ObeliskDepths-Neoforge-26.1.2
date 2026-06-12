@@ -2,6 +2,7 @@ package io.github.naimjeg.obeliskdepths.dungeon.site.reader;
 
 import io.github.naimjeg.obeliskdepths.ObeliskDepths;
 import io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSiteKey;
+import io.github.naimjeg.obeliskdepths.registry.ModStructures;
 import net.minecraft.core.Registry;
 import net.minecraft.core.SectionPos;
 import net.minecraft.core.registries.Registries;
@@ -23,28 +24,13 @@ public final class DungeonStructureStartReader {
             ServerLevel level,
             DungeonSiteKey key
     ) {
-        return read(level, key, false);
-    }
-
-    public static Optional<StructureStart> readOrGenerate(
-            ServerLevel level,
-            DungeonSiteKey key
-    ) {
-        return read(level, key, true);
-    }
-
-    private static Optional<StructureStart> read(
-            ServerLevel level,
-            DungeonSiteKey key,
-            boolean generateStructureStarts
-    ) {
         ChunkPos startChunk = key.toChunkPos();
 
         ChunkAccess chunk = level.getChunk(
                 startChunk.x(),
                 startChunk.z(),
                 ChunkStatus.STRUCTURE_STARTS,
-                generateStructureStarts
+                false
         );
 
         if (chunk == null) {
@@ -55,13 +41,15 @@ public final class DungeonStructureStartReader {
                 level.registryAccess().lookupOrThrow(Registries.STRUCTURE);
 
         Structure structure = structureRegistry.getValue(
-                Identifier.fromNamespaceAndPath(
-                        ObeliskDepths.MOD_ID,
-                        "depths_site"
-                )
+                ModStructures.DEPTHS_SITE.identifier()
         );
 
         if (structure == null) {
+            ObeliskDepths.LOGGER.error(
+                    "Missing registered dungeon structure {} in level {}",
+                    ModStructures.DEPTHS_SITE.identifier(),
+                    level.dimension().identifier()
+            );
             return Optional.empty();
         }
 
@@ -72,7 +60,17 @@ public final class DungeonStructureStartReader {
                         chunk
                 );
 
-        if (start == null || !start.isValid()) {
+        if (start == null) {
+            return Optional.empty();
+        }
+
+        if (!start.isValid()) {
+            ObeliskDepths.LOGGER.debug(
+                    "[OD locator] invalid structure start structure={} chunk={} generated={}",
+                    ModStructures.DEPTHS_SITE.identifier(),
+                    startChunk,
+                    false
+            );
             return Optional.empty();
         }
 

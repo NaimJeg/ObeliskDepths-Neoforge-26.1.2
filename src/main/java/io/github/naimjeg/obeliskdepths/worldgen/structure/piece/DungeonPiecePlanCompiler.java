@@ -3,8 +3,9 @@ package io.github.naimjeg.obeliskdepths.worldgen.structure.piece;
 import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomType;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.ObeliskDungeonPieceRole;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonConnectorSide;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonCellBox;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonCellPos;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutConstants;
-import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutEdge;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutNode;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutPlan;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonSpatialLayoutValidator;
@@ -15,26 +16,26 @@ import net.minecraft.world.level.levelgen.structure.BoundingBox;
 
 public final class DungeonPiecePlanCompiler {
     private static final int SITE_BOUNDS_BUFFER_BLOCKS = 2;
-    private static final int MIN_CORRIDOR_WIDTH_BLOCKS = 3;
-    private static final int CORRIDOR_HEIGHT_BLOCKS = 4;
 
     private DungeonPiecePlanCompiler() {
     }
 
     public static DungeonPiecePlan compile(
             BlockPos layoutOrigin,
-            DungeonLayoutPlan layout
+            DungeonLayoutPlan layout,
+            String primaryEntryRoomId
     ) {
         DungeonSpatialLayoutValidator.validate(layout);
 
         List<DungeonPieceMetadata> roomPieces = layout.nodes()
                 .stream()
-                .map(node -> roomPiece(layoutOrigin, node))
+                .map(node -> roomPiece(layoutOrigin, node, primaryEntryRoomId))
                 .toList();
+        DungeonRoutingResult routing = DungeonCorridorRouter.route(layout);
         List<DungeonPieceMetadata> corridorPieces = new ArrayList<>();
 
-        for (DungeonLayoutEdge edge : layout.edges()) {
-            corridorPieces.addAll(corridorPieces(roomPieces, edge));
+        for (DungeonRoutedCorridor corridor : routing.corridors()) {
+            corridorPieces.addAll(corridorPieces(layoutOrigin, corridor));
         }
 
         BoundingBox union = null;
@@ -56,25 +57,42 @@ public final class DungeonPiecePlanCompiler {
         pieces.addAll(roomPieces);
 
         BoundingBox siteBounds = inflate(union, SITE_BOUNDS_BUFFER_BLOCKS);
-        BlockPos startRoomAnchor = roomPieces.stream()
-                .filter(piece -> piece.role() == ObeliskDungeonPieceRole.START_ROOM)
+        DungeonPieceMetadata primaryEntry = roomPieces.stream()
+                .filter(piece -> piece.id().equals(primaryEntryRoomId))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Piece plan missing START room"))
-                .anchor();
+                ;
+
+        if (primaryEntry.role() != ObeliskDungeonPieceRole.START_ROOM) {
+            throw new IllegalArgumentException(
+                    "Primary entry room is not a START room: " + primaryEntryRoomId
+            );
+        }
+
+        BlockPos primaryEntryAnchor = primaryEntry.anchor();
 
         DungeonSpatialLayoutValidator.validatePieceBounds(
                 layout,
                 siteBounds,
                 pieces.stream().map(DungeonPieceMetadata::bounds).toList(),
-                startRoomAnchor
+                primaryEntryAnchor
         );
+        validateCorridorIntersections(roomPieces, corridorPieces);
 
-        return new DungeonPiecePlan(layoutOrigin, siteBounds, pieces);
+        return new DungeonPiecePlan(
+                layoutOrigin,
+                siteBounds,
+                primaryEntryRoomId,
+                primaryEntryAnchor,
+                routing.corridors(),
+                pieces
+        );
     }
 
     private static DungeonPieceMetadata roomPiece(
             BlockPos layoutOrigin,
-            DungeonLayoutNode node
+            DungeonLayoutNode node,
+            String primaryEntryRoomId
     ) {
         BoundingBox bounds = node.cellBox().toBlockBounds(layoutOrigin);
 
@@ -82,123 +100,114 @@ public final class DungeonPiecePlanCompiler {
                 roleFor(node.type()),
                 node.roomId(),
                 node.blockAnchor(layoutOrigin),
-                bounds
+                bounds,
+                node.roomId().equals(primaryEntryRoomId)
         );
     }
 
     private static List<DungeonPieceMetadata> corridorPieces(
-            List<DungeonPieceMetadata> rooms,
-            DungeonLayoutEdge edge
+            BlockPos layoutOrigin,
+            DungeonRoutedCorridor corridor
     ) {
-        if (edge.fromSide().vertical() || edge.toSide().vertical()) {
-            throw new UnsupportedOperationException(
-                    "Vertical dungeon corridors are not implemented yet: " + edge.id()
-            );
-        }
+        List<DungeonPieceMetadata> pieces = new ArrayList<>();
+        List<DungeonCellPos> path = corridor.path();
+        int segmentStart = 0;
+        int segmentIndex = 0;
 
-        DungeonPieceMetadata from = requirePiece(rooms, edge.fromRoomId());
-        DungeonPieceMetadata to = requirePiece(rooms, edge.toRoomId());
-        BlockPos fromCenter = connectorCenter(from.bounds(), edge.fromSide());
-        BlockPos toCenter = connectorCenter(to.bounds(), edge.toSide());
-        int width = Math.max(
-                MIN_CORRIDOR_WIDTH_BLOCKS,
-                edge.widthCells() * DungeonLayoutConstants.CELL_SIZE_X
-        );
+        for (int index = 1; index <= path.size(); index++) {
+            boolean end = index == path.size();
+            boolean directionChanged = false;
 
-        if (fromCenter.getX() == toCenter.getX() || fromCenter.getZ() == toCenter.getZ()) {
-            BoundingBox bounds = corridorBounds(fromCenter, toCenter, width);
-            return List.of(new DungeonPieceMetadata(
-                    ObeliskDungeonPieceRole.CORRIDOR,
-                    edge.id(),
-                    bounds.getCenter(),
-                    bounds
-            ));
-        }
+            if (!end && index > segmentStart + 1) {
+                DungeonCellPos previous = path.get(index - 1);
+                DungeonCellPos current = path.get(index);
+                DungeonCellPos segmentPrevious = path.get(segmentStart + 1);
+                DungeonCellPos segmentStartPos = path.get(segmentStart);
+                int currentDx = Integer.compare(current.x() - previous.x(), 0);
+                int currentDz = Integer.compare(current.z() - previous.z(), 0);
+                int segmentDx = Integer.compare(segmentPrevious.x() - segmentStartPos.x(), 0);
+                int segmentDz = Integer.compare(segmentPrevious.z() - segmentStartPos.z(), 0);
+                directionChanged = currentDx != segmentDx || currentDz != segmentDz;
+            }
 
-        BlockPos bend = new BlockPos(toCenter.getX(), fromCenter.getY(), fromCenter.getZ());
-        BoundingBox first = corridorBounds(fromCenter, bend, width);
-        BoundingBox second = corridorBounds(bend, toCenter, width);
-
-        return List.of(
-                new DungeonPieceMetadata(
+            if (end || directionChanged) {
+                int segmentEnd = directionChanged ? index - 1 : index - 1;
+                BoundingBox bounds = cellSegmentBounds(
+                        layoutOrigin,
+                        path.get(segmentStart),
+                        path.get(segmentEnd)
+                );
+                pieces.add(new DungeonPieceMetadata(
                         ObeliskDungeonPieceRole.CORRIDOR,
-                        edge.id() + "_a",
-                        first.getCenter(),
-                        first
-                ),
-                new DungeonPieceMetadata(
-                        ObeliskDungeonPieceRole.CORRIDOR,
-                        edge.id() + "_b",
-                        second.getCenter(),
-                        second
-                )
-        );
-    }
-
-    private static DungeonPieceMetadata requirePiece(
-            List<DungeonPieceMetadata> rooms,
-            String roomId
-    ) {
-        return rooms.stream()
-                .filter(room -> room.id().equals(roomId))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Unknown embedded room piece: " + roomId));
-    }
-
-    private static BlockPos connectorCenter(
-            BoundingBox bounds,
-            DungeonConnectorSide side
-    ) {
-        int centerX = bounds.minX() + bounds.getXSpan() / 2;
-        int centerY = bounds.minY() + 1;
-        int centerZ = bounds.minZ() + bounds.getZSpan() / 2;
-
-        return switch (side) {
-            case NORTH -> new BlockPos(centerX, centerY, bounds.minZ());
-            case SOUTH -> new BlockPos(centerX, centerY, bounds.maxZ());
-            case WEST -> new BlockPos(bounds.minX(), centerY, centerZ);
-            case EAST -> new BlockPos(bounds.maxX(), centerY, centerZ);
-            case UP, DOWN -> throw new UnsupportedOperationException(
-                    "Vertical connector center is not supported yet: " + side
-            );
-        };
-    }
-
-    private static BoundingBox corridorBounds(
-            BlockPos first,
-            BlockPos second,
-            int width
-    ) {
-        int halfLow = width / 2;
-        int halfHigh = width - halfLow - 1;
-        int minY = Math.min(first.getY(), second.getY()) - 1;
-        int maxY = minY + CORRIDOR_HEIGHT_BLOCKS;
-
-        if (first.getX() == second.getX()) {
-            int x = first.getX();
-            return new BoundingBox(
-                    x - halfLow,
-                    minY,
-                    Math.min(first.getZ(), second.getZ()),
-                    x + halfHigh,
-                    maxY,
-                    Math.max(first.getZ(), second.getZ())
-            );
+                        corridor.edgeId() + "_segment_" + segmentIndex++,
+                        bounds.getCenter(),
+                        bounds,
+                        false
+                ));
+                segmentStart = directionChanged ? index : segmentEnd;
+            }
         }
 
-        if (first.getZ() == second.getZ()) {
-            int z = first.getZ();
-            return new BoundingBox(
-                    Math.min(first.getX(), second.getX()),
-                    minY,
-                    z - halfLow,
-                    Math.max(first.getX(), second.getX()),
-                    maxY,
-                    z + halfHigh
-            );
+        return pieces;
+    }
+
+    private static BoundingBox cellSegmentBounds(
+            BlockPos layoutOrigin,
+            DungeonCellPos first,
+            DungeonCellPos second
+    ) {
+        int minX = Math.min(first.x(), second.x());
+        int minZ = Math.min(first.z(), second.z());
+        int sizeX = Math.abs(first.x() - second.x()) + 1;
+        int sizeZ = Math.abs(first.z() - second.z()) + 1;
+
+        if (first.x() != second.x() && first.z() != second.z()) {
+            throw new IllegalArgumentException("Routed corridor segment is not axis-aligned: " + first + " -> " + second);
         }
 
-        throw new IllegalArgumentException("Corridor segment must be axis-aligned: " + first + " -> " + second);
+        return new DungeonCellBox(minX, first.y(), minZ, sizeX, 1, sizeZ)
+                .toBlockBounds(layoutOrigin);
+    }
+
+    private static void validateCorridorIntersections(
+            List<DungeonPieceMetadata> roomPieces,
+            List<DungeonPieceMetadata> corridorPieces
+    ) {
+        for (int i = 0; i < corridorPieces.size(); i++) {
+            DungeonPieceMetadata first = corridorPieces.get(i);
+
+            for (int j = i + 1; j < corridorPieces.size(); j++) {
+                DungeonPieceMetadata second = corridorPieces.get(j);
+
+                if (intersects(first.bounds(), second.bounds())) {
+                    throw new IllegalArgumentException(
+                            "Compiled corridors overlap: "
+                                    + first.id()
+                                    + " bounds="
+                                    + first.bounds()
+                                    + " and "
+                                    + second.id()
+                                    + " bounds="
+                                    + second.bounds()
+                    );
+                }
+            }
+
+            for (DungeonPieceMetadata room : roomPieces) {
+                if (intersects(first.bounds(), room.bounds())) {
+                    throw new IllegalArgumentException(
+                            "Compiled corridor intersects room: corridor="
+                                    + first.id()
+                                    + " room="
+                                    + room.id()
+                                    + " corridorBounds="
+                                    + first.bounds()
+                                    + " roomBounds="
+                                    + room.bounds()
+                    );
+                }
+            }
+        }
     }
 
     private static BoundingBox include(
@@ -231,6 +240,18 @@ public final class DungeonPiecePlanCompiler {
                 bounds.maxY() + amount,
                 bounds.maxZ() + amount
         );
+    }
+
+    private static boolean intersects(
+            BoundingBox first,
+            BoundingBox second
+    ) {
+        return first.minX() <= second.maxX()
+                && first.maxX() >= second.minX()
+                && first.minY() <= second.maxY()
+                && first.maxY() >= second.minY()
+                && first.minZ() <= second.maxZ()
+                && first.maxZ() >= second.minZ();
     }
 
     private static ObeliskDungeonPieceRole roleFor(DungeonRoomType type) {

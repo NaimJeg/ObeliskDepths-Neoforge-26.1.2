@@ -9,29 +9,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 /*
- * Stable key for a generated dungeon site.
+ * Stable key for a generated dungeon structure site.
  *
- * This key identifies the owning/start chunk of the vanilla StructureStart.
- * It is not a runtime instance id.
- * It is not a territory allocation id.
- * It is not a room id.
- *
- * Runtime identity flow:
- *
- *   DungeonSiteKey
- *     -> derived from StructureStart.getChunkPos()
- *     -> converted to DungeonTerritoryId when a runtime instance reserves it
- *
- * Authoritative metadata flow:
- *
- *   DungeonSiteKey
- *     -> DungeonStructureStartReader
- *     -> StructureStart
- *     -> ObeliskDungeonPiece list
- *     -> DungeonSite projection
- *
- * Prototype/debug metadata may also use this key shape, but it must not be
- * treated as proof that terrain or pieces exist.
+ * The fields retain their historical names for serialization compatibility,
+ * and identify the vanilla StructureStart chunk that owns the generated
+ * dungeon metadata.
  */
 public record DungeonSiteKey(
         int startChunkX,

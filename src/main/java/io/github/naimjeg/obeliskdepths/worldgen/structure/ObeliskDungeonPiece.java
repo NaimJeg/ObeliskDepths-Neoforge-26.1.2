@@ -8,6 +8,7 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.StructureManager;
 import net.minecraft.world.level.WorldGenLevel;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
@@ -35,16 +36,28 @@ public final class ObeliskDungeonPiece extends StructurePiece {
     private static final String TAG_ANCHOR_X = "AnchorX";
     private static final String TAG_ANCHOR_Y = "AnchorY";
     private static final String TAG_ANCHOR_Z = "AnchorZ";
+    private static final String TAG_PRIMARY_ENTRY = "PrimaryEntry";
 
     private final ObeliskDungeonPieceRole role;
     private final String roomId;
     private final BlockPos anchorPos;
+    private final boolean primaryEntry;
 
     public ObeliskDungeonPiece(
             ObeliskDungeonPieceRole role,
             String roomId,
             BlockPos anchorPos,
             BoundingBox boundingBox
+    ) {
+        this(role, roomId, anchorPos, boundingBox, false);
+    }
+
+    public ObeliskDungeonPiece(
+            ObeliskDungeonPieceRole role,
+            String roomId,
+            BlockPos anchorPos,
+            BoundingBox boundingBox,
+            boolean primaryEntry
     ) {
         super(
                 ModWorldgen.OBELISK_DUNGEON_PIECE.get(),
@@ -55,6 +68,7 @@ public final class ObeliskDungeonPiece extends StructurePiece {
         this.role = role;
         this.roomId = roomId;
         this.anchorPos = anchorPos;
+        this.primaryEntry = primaryEntry && role == ObeliskDungeonPieceRole.START_ROOM;
     }
 
     public ObeliskDungeonPiece(
@@ -74,6 +88,9 @@ public final class ObeliskDungeonPiece extends StructurePiece {
                 tag.getIntOr(TAG_ANCHOR_Y, this.boundingBox.minY() + 1),
                 tag.getIntOr(TAG_ANCHOR_Z, this.boundingBox.getCenter().getZ())
         );
+
+        this.primaryEntry = tag.getBooleanOr(TAG_PRIMARY_ENTRY, false)
+                && this.role == ObeliskDungeonPieceRole.START_ROOM;
     }
 
     public ObeliskDungeonPieceRole role() {
@@ -88,6 +105,10 @@ public final class ObeliskDungeonPiece extends StructurePiece {
         return this.anchorPos;
     }
 
+    public boolean primaryEntry() {
+        return this.primaryEntry;
+    }
+
     @Override
     protected void addAdditionalSaveData(
             StructurePieceSerializationContext context,
@@ -98,6 +119,7 @@ public final class ObeliskDungeonPiece extends StructurePiece {
         tag.putInt(TAG_ANCHOR_X, this.anchorPos.getX());
         tag.putInt(TAG_ANCHOR_Y, this.anchorPos.getY());
         tag.putInt(TAG_ANCHOR_Z, this.anchorPos.getZ());
+        tag.putBoolean(TAG_PRIMARY_ENTRY, this.primaryEntry);
     }
 
     @Override
@@ -116,14 +138,22 @@ public final class ObeliskDungeonPiece extends StructurePiece {
             case SITE -> {
                 // Site piece intentionally carries authoritative bounds only.
             }
-            case CORRIDOR -> placeFloorPlane(
+
+            case CORRIDOR -> placeCorridor(
                     level,
                     chunkBB,
-                    pieceBB,
-                    ModBlocks.DUNGEON_BRICKS.get().defaultBlockState()
+                    pieceBB
             );
-            case START_ROOM, COMBAT_ROOM, TREASURE_ROOM, BOSS_ROOM, EXIT_ROOM ->
-                    placeRoom(level, chunkBB, pieceBB);
+
+            case START_ROOM,
+                 COMBAT_ROOM,
+                 TREASURE_ROOM,
+                 BOSS_ROOM,
+                 EXIT_ROOM -> placeRoom(
+                    level,
+                    chunkBB,
+                    pieceBB
+            );
         }
     }
 
@@ -137,8 +167,80 @@ public final class ObeliskDungeonPiece extends StructurePiece {
             BoundingBox chunkBB,
             BoundingBox pieceBB
     ) {
-        placeFloorPlane(level, chunkBB, pieceBB, floorStateForRole());
+        /*
+         * The dungeon is generated inside solid terrain. Clear the piece volume
+         * above its floor so the room is physically traversable.
+         *
+         * Walls and ceilings are intentionally not placed during the graph/debug
+         * generation phase.
+         */
+        carveInterior(level, chunkBB, pieceBB);
+
+        placeFloorPlane(
+                level,
+                chunkBB,
+                pieceBB,
+                floorStateForRole()
+        );
+
         placeRoomMarker(level, chunkBB, pieceBB);
+    }
+
+    private void placeCorridor(
+            WorldGenLevel level,
+            BoundingBox chunkBB,
+            BoundingBox pieceBB
+    ) {
+        carveInterior(level, chunkBB, pieceBB);
+
+        placeFloorPlane(
+                level,
+                chunkBB,
+                pieceBB,
+                corridorFloorState()
+        );
+    }
+
+    private static void carveInterior(
+            WorldGenLevel level,
+            BoundingBox chunkBB,
+            BoundingBox pieceBB
+    ) {
+        int interiorMinY = pieceBB.minY() + 1;
+
+        if (interiorMinY > pieceBB.maxY()) {
+            return;
+        }
+
+        BoundingBox clipped = intersection(
+                chunkBB,
+                new BoundingBox(
+                        pieceBB.minX(),
+                        interiorMinY,
+                        pieceBB.minZ(),
+                        pieceBB.maxX(),
+                        pieceBB.maxY(),
+                        pieceBB.maxZ()
+                )
+        );
+
+        if (clipped == null) {
+            return;
+        }
+
+        BlockState air = Blocks.CAVE_AIR.defaultBlockState();
+
+        for (int y = clipped.minY(); y <= clipped.maxY(); y++) {
+            for (int x = clipped.minX(); x <= clipped.maxX(); x++) {
+                for (int z = clipped.minZ(); z <= clipped.maxZ(); z++) {
+                    level.setBlock(
+                            new BlockPos(x, y, z),
+                            air,
+                            2
+                    );
+                }
+            }
+        }
     }
 
     private void placeRoomMarker(
@@ -226,5 +328,13 @@ public final class ObeliskDungeonPiece extends StructurePiece {
             case COMBAT_ROOM -> ModBlocks.DUNGEON_STONE.get().defaultBlockState();
             case TREASURE_ROOM, BOSS_ROOM -> ModBlocks.DUNGEON_TILES.get().defaultBlockState();
         };
+    }
+
+    private BlockState corridorFloorState() {
+        if (this.roomId.startsWith("corridor_loop_")) {
+            return ModBlocks.DUNGEON_TILES.get().defaultBlockState();
+        }
+
+        return ModBlocks.DUNGEON_BRICKS.get().defaultBlockState();
     }
 }

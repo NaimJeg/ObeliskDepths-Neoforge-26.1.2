@@ -12,18 +12,19 @@ public final class WorldgenDungeonSiteLocator {
     }
 
     /*
-     * Authoritative runtime lookup.
+     * Worldgen-owned metadata lookup.
      *
-     * This method is used by DungeonInstanceService when creating a real
-     * DungeonInstance. Therefore it must not fabricate site metadata.
+     * Runtime instance creation uses this to find an existing generated site.
+     * It must return only metadata projected from actual vanilla-generated
+     * StructureStart data.
      *
      * Valid source:
      *   vanilla StructureStart + serialized ObeliskDungeonPiece metadata
      *
      * Requirement:
-     *   nearby chunks must exist far enough for vanilla worldgen to produce the
-     *   StructureStart. Debug warmup commands may load/generate chunks, but this
-     *   runtime lookup deliberately does not.
+     *   nearby chunks must already exist far enough for vanilla worldgen to have
+     *   produced the StructureStart. This lookup deliberately does not generate
+     *   fallback starts in response to runtime allocation.
      *
      * Invalid source:
      *   deterministic prototype planner

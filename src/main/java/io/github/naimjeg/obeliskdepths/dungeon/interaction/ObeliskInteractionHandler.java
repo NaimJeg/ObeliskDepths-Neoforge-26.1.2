@@ -53,15 +53,30 @@ public final class ObeliskInteractionHandler {
             DungeonAccessMode requestedMode,
             ItemStack tributeStack
     ) {
+        long acceptedNanos = System.nanoTime();
         long gameTime = player.level().getGameTime();
+        ObeliskDepths.LOGGER.debug(
+                "[OD timing] portalRequestAccepted player={} mode={} obelisk={} gameTime={}",
+                player.getGameProfile().name(),
+                requestedMode,
+                obeliskPos,
+                gameTime
+        );
 
         if (requestedMode == DungeonAccessMode.PARTY_OPEN) {
+            long lookupStart = System.nanoTime();
             Optional<ActivationTarget> existingTarget =
                     findExistingPartyOpenTarget(
                             dungeonLevel,
                             obeliskPos,
                             gameTime
                     );
+            ObeliskDepths.LOGGER.debug(
+                    "[OD timing] existingSessionLookup player={} found={} elapsedMicros={}",
+                    player.getGameProfile().name(),
+                    existingTarget.isPresent(),
+                    (System.nanoTime() - lookupStart) / 1_000L
+            );
 
             if (existingTarget.isPresent()) {
                 return enterTarget(
@@ -99,12 +114,19 @@ public final class ObeliskInteractionHandler {
              * the fix is dimension/structure/chunk-generation diagnostics, not fake runtime
              * reservation.
              */
+            long reserveStart = System.nanoTime();
             Optional<DungeonInstance> createdInstance =
                     DungeonInstanceService.reserveNearestUnreachedWorldgenSite(
                             dungeonLevel,
                             obeliskPos,
                             tribute.toDifficulty()
                     );
+            ObeliskDepths.LOGGER.debug(
+                    "[OD timing] siteLookupAndReservation player={} found={} elapsedMicros={}",
+                    player.getGameProfile().name(),
+                    createdInstance.isPresent(),
+                    (System.nanoTime() - reserveStart) / 1_000L
+            );
 
             if (createdInstance.isEmpty()) {
                 player.sendOverlayMessage(
@@ -115,6 +137,7 @@ public final class ObeliskInteractionHandler {
 
             instance = createdInstance.get();
 
+            long sessionStart = System.nanoTime();
             session = PortalSessionManager.openSession(
                     dungeonLevel,
                     instance.id(),
@@ -122,6 +145,12 @@ public final class ObeliskInteractionHandler {
                     obeliskPos,
                     requestedMode,
                     gameTime
+            );
+            ObeliskDepths.LOGGER.debug(
+                    "[OD timing] sessionCreation player={} instance={} elapsedMicros={}",
+                    player.getGameProfile().name(),
+                    instance.id(),
+                    (System.nanoTime() - sessionStart) / 1_000L
             );
 
             ActivationTarget newTarget = new ActivationTarget(
@@ -141,7 +170,14 @@ public final class ObeliskInteractionHandler {
                     gameTime
             );
         } catch (Exception exception) {
+            long rollbackStart = System.nanoTime();
             rollbackCreatedTarget(dungeonLevel, instance, session);
+            ObeliskDepths.LOGGER.debug(
+                    "[OD timing] activationRollback player={} elapsedMicros={} totalMicros={}",
+                    player.getGameProfile().name(),
+                    (System.nanoTime() - rollbackStart) / 1_000L,
+                    (System.nanoTime() - acceptedNanos) / 1_000L
+            );
 
             ObeliskDepths.LOGGER.error(
                     "Failed to claim obelisk dungeon site at {} for player {}",
@@ -201,6 +237,7 @@ public final class ObeliskInteractionHandler {
             BlockPos obeliskPos,
             long gameTime
     ) {
+        long enterStart = System.nanoTime();
         ResourceKey<Level> returnDimension = player.level().dimension();
         BlockPos returnPos = player.blockPosition();
         Optional<PlayerDungeonData> previousPlayerData =
@@ -231,11 +268,18 @@ public final class ObeliskInteractionHandler {
              * Do not generate or clear blocks here.
              */
 
+            long teleportStart = System.nanoTime();
             Optional<ServerPlayer> teleportedPlayer =
                     ObeliskDepthsTeleporter.teleportToInstanceStart(
                             player,
                             target.instance()
                     );
+            ObeliskDepths.LOGGER.debug(
+                    "[OD timing] teleportationStage player={} success={} elapsedMicros={}",
+                    player.getGameProfile().name(),
+                    teleportedPlayer.isPresent(),
+                    (System.nanoTime() - teleportStart) / 1_000L
+            );
 
             if (teleportedPlayer.isEmpty()) {
                 if (target.createdNow()) {
@@ -247,7 +291,7 @@ public final class ObeliskInteractionHandler {
                 }
 
                 player.sendOverlayMessage(
-                        Component.literal("ObeliskDepths dimension was not found.")
+                        Component.literal("Could not resolve a safe dungeon entry position.")
                 );
 
                 return false;
@@ -304,6 +348,12 @@ public final class ObeliskInteractionHandler {
                     target.session().accessMode(),
                     target.createdNow(),
                     target.instance().participants().size()
+            );
+            ObeliskDepths.LOGGER.debug(
+                    "[OD timing] activationComplete player={} instance={} totalMicros={}",
+                    enteredPlayer.getGameProfile().name(),
+                    target.instance().id(),
+                    (System.nanoTime() - enterStart) / 1_000L
             );
 
             return true;

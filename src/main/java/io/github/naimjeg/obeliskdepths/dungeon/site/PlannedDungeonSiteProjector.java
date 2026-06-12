@@ -62,6 +62,7 @@ public final class PlannedDungeonSiteProjector {
         return new DungeonSite(
                 candidate.key(),
                 fullBounds,
+                startRoom.id(),
                 start,
                 List.of(startRoom, combatRoom)
         );

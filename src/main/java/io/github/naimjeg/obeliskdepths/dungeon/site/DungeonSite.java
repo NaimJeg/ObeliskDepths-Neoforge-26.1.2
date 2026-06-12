@@ -21,6 +21,7 @@ import java.util.Optional;
 public record DungeonSite(
         DungeonSiteKey key,
         DungeonBounds bounds,
+        DungeonRoomId primaryEntryRoomId,
         BlockPos startPos,
         List<DungeonGeneratedRoom> rooms
 ) {
@@ -30,14 +31,27 @@ public record DungeonSite(
                             .forGetter(DungeonSite::key),
                     DungeonBounds.CODEC.fieldOf("bounds")
                             .forGetter(DungeonSite::bounds),
+                    DungeonRoomId.CODEC.optionalFieldOf("primary_entry_room_id")
+                            .forGetter(site -> Optional.of(site.primaryEntryRoomId())),
                     BlockPos.CODEC.fieldOf("start_pos")
                             .forGetter(DungeonSite::startPos),
                     DungeonGeneratedRoom.CODEC.listOf()
                             .fieldOf("rooms")
                             .forGetter(DungeonSite::rooms)
-            ).apply(instance, DungeonSite::new));
+            ).apply(instance, (key, bounds, primaryEntryRoomId, startPos, rooms) ->
+                    new DungeonSite(
+                            key,
+                            bounds,
+                            primaryEntryRoomId.orElseGet(() -> firstStartRoomId(rooms)),
+                            startPos,
+                            rooms
+                    )));
 
     public DungeonSite {
+        if (primaryEntryRoomId == null) {
+            throw new IllegalArgumentException("Dungeon site primary entry room id must be present");
+        }
+
         rooms = List.copyOf(rooms);
     }
 
@@ -53,15 +67,22 @@ public record DungeonSite(
                 .toList();
     }
 
-    public Optional<DungeonGeneratedRoom> startRoom() {
-        return this.roomsOfType(DungeonRoomType.START)
-                .stream()
-                .findFirst();
+    public Optional<DungeonGeneratedRoom> primaryEntryRoom() {
+        return this.room(this.primaryEntryRoomId)
+                .filter(room -> room.type() == DungeonRoomType.START);
     }
 
     public Optional<DungeonGeneratedRoom> roomAt(BlockPos pos) {
         return this.rooms.stream()
                 .filter(room -> room.contains(pos))
                 .findFirst();
+    }
+
+    private static DungeonRoomId firstStartRoomId(List<DungeonGeneratedRoom> rooms) {
+        return rooms.stream()
+                .filter(room -> room.type() == DungeonRoomType.START)
+                .findFirst()
+                .map(DungeonGeneratedRoom::id)
+                .orElseGet(() -> DungeonRoomId.of("missing_primary_entry"));
     }
 }
