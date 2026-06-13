@@ -108,28 +108,49 @@ public final class DungeonGraphGenerator {
 
         private void connectRings() {
             int guaranteedDepth = CONFIG.guaranteedRingDepth();
-            int guaranteedConnections = Math.min(this.sectorCount - 1, 2);
-            for (int sector = 0; sector < guaranteedConnections; sector++) {
-                int nextSector = sector + 1;
-                int maxDepth = Math.min(
+            List<LoopCandidate> guaranteed = new ArrayList<>();
+
+            for (int sector = 0; sector < this.sectorCount; sector++) {
+                int nextSector = (sector + 1) % this.sectorCount;
+                int maximumSharedDepth = Math.min(
                         this.armDepthBySector.get(sector),
                         this.armDepthBySector.get(nextSector)
                 );
 
-                if (maxDepth >= guaranteedDepth) {
-                    maybeAddLoop(nodeIdAt(sector, guaranteedDepth), nodeIdAt(nextSector, guaranteedDepth));
+                if (maximumSharedDepth >= guaranteedDepth) {
+                    guaranteed.add(new LoopCandidate(
+                            sector,
+                            nextSector,
+                            guaranteedDepth
+                    ));
+                }
+            }
+
+            // A single guaranteed cross-link creates a real cycle without
+            // forcing a partial pseudo-ring around the entire dungeon.
+            for (LoopCandidate candidate : guaranteed) {
+                int before = this.loopEdgeCount;
+                maybeAddLoop(
+                        nodeIdAt(candidate.sector(), candidate.nextSectorDepth()),
+                        nodeIdAt(candidate.nextSector(), candidate.nextSectorDepth())
+                );
+
+                if (this.loopEdgeCount > before) {
+                    break;
                 }
             }
 
             List<LoopCandidate> optional = new ArrayList<>();
             for (int sector = 0; sector < this.sectorCount; sector++) {
                 int nextSector = (sector + 1) % this.sectorCount;
-                int maxDepth = Math.min(
+                int maximumSharedDepth = Math.min(
                         this.armDepthBySector.get(sector),
                         this.armDepthBySector.get(nextSector)
                 );
 
-                for (int depth = guaranteedDepth + 1; depth < maxDepth; depth++) {
+                for (int depth = guaranteedDepth + 1;
+                     depth < maximumSharedDepth;
+                     depth++) {
                     optional.add(new LoopCandidate(sector, nextSector, depth));
                 }
             }
@@ -141,7 +162,8 @@ public final class DungeonGraphGenerator {
             ));
 
             for (LoopCandidate candidate : optional) {
-                if (remainingBudget <= 0 || this.loopEdgeCount >= CONFIG.maxLoopEdges()) {
+                if (remainingBudget <= 0
+                        || this.loopEdgeCount >= CONFIG.maxLoopEdges()) {
                     break;
                 }
 
@@ -150,6 +172,7 @@ public final class DungeonGraphGenerator {
                         nodeIdAt(candidate.sector(), candidate.nextSectorDepth()),
                         nodeIdAt(candidate.nextSector(), candidate.nextSectorDepth())
                 );
+
                 if (this.loopEdgeCount > before) {
                     remainingBudget--;
                 }

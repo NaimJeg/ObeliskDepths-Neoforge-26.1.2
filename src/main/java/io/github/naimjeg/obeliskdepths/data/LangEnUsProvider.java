@@ -133,16 +133,32 @@ public final class LangEnUsProvider extends LanguageProvider {
                 "Balance"
         );
         add(
+                "tempering_direction.obeliskdepths.balance.description",
+                "Balanced tempering draws from all matching balanced pools."
+        );
+        add(
                 "tempering_direction.obeliskdepths.edge",
                 "Edge"
+        );
+        add(
+                "tempering_direction.obeliskdepths.edge.description",
+                "Edge tempering favors direct offensive affixes."
         );
         add(
                 "tempering_direction.obeliskdepths.guard",
                 "Guard"
         );
         add(
+                "tempering_direction.obeliskdepths.guard.description",
+                "Guard tempering favors defensive affixes."
+        );
+        add(
                 "tempering_direction.obeliskdepths.echo",
                 "Echo"
+        );
+        add(
+                "tempering_direction.obeliskdepths.echo.description",
+                "Echo tempering favors unusual resonance affixes."
         );
         add(
                 "tooltip.obeliskdepths.tempering_template.tier",

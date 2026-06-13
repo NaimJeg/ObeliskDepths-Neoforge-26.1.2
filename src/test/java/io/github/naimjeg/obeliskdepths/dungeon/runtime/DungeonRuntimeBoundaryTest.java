@@ -14,9 +14,11 @@ public final class DungeonRuntimeBoundaryTest {
     public static void main(String[] args) throws IOException {
         assertRuntimeReservationDoesNotPlanOrMaterialize();
         assertTeleportDoesNotMaterialize();
+        assertStructureLookupDoesNotGenerateCandidates();
         assertRuntimePackagesDoNotWriteDungeonBlocks();
         assertRuntimeGeometryPackageIsAbsent();
         assertGeneratedPiecesComeFromWorldgenBuilder();
+        assertOverlapDiagnosticsDoNotRejectVanillaStarts();
     }
 
     private static void assertRuntimeReservationDoesNotPlanOrMaterialize() throws IOException {
@@ -37,6 +39,7 @@ public final class DungeonRuntimeBoundaryTest {
         assertNotContains(source, "DungeonSite" + "Plan", "teleportation must not use planned site metadata");
         assertNotContains(source, "set" + "Block(", "teleportation must not write blocks");
         assertContains(source, "readGeneratedSite", "teleportation should resolve generated structure metadata");
+        assertContains(source, "lookupExistingChunk", "teleportation should load persisted entry chunks without generation");
         assertContains(source, "must not create", "teleport invariant comment should be present");
     }
 
@@ -56,6 +59,14 @@ public final class DungeonRuntimeBoundaryTest {
             assertNotContains(source, "Structure" + "Template", file + " must not place templates");
             assertNotContains(source, "dungeon." + "materialization", file + " must not import geometry APIs");
         }
+    }
+
+    private static void assertStructureLookupDoesNotGenerateCandidates() throws IOException {
+        String source = read("io/github/naimjeg/obeliskdepths/dungeon/site/reader/DungeonStructureStartReader.java");
+
+        assertNotContains(source, "read" + "OrGenerate", "structure lookup must not expose runtime generation fallback");
+        assertNotContains(source, "STRUCTURE_STARTS, true)", "structure lookup must not generate unpersisted candidates");
+        assertContains(source, "chunkScanner()", "structure lookup should probe persisted chunk data before loading");
     }
 
     private static void assertRuntimeGeometryPackageIsAbsent() throws IOException {
@@ -81,6 +92,14 @@ public final class DungeonRuntimeBoundaryTest {
         assertContains(structure, "DungeonPiecePlanEmitter.emit", "structure generation should emit compiled pieces");
         assertContains(emitter, "StructurePiecesBuilder", "piece emission should use vanilla structure builder");
         assertContains(emitter, "builder.addPiece", "rooms and corridors should be structure pieces");
+    }
+
+    private static void assertOverlapDiagnosticsDoNotRejectVanillaStarts() throws IOException {
+        String guard = read("io/github/naimjeg/obeliskdepths/worldgen/structure/placement/ObeliskDungeonSiteOverlapGuard.java");
+
+        assertContains(guard, "placementDecision=vanilla_random_spread", "overlap guard should be diagnostic only");
+        assertNotContains(guard, "rejecting candidate chunk", "overlap diagnostics must not reject all vanilla starts");
+        assertNotContains(guard, "return Optional.of(new Rejection", "overlap diagnostics must not veto structure generation");
     }
 
     private static String read(String relative) throws IOException {

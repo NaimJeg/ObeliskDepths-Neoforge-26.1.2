@@ -5,15 +5,16 @@ import io.github.naimjeg.damagenexus.api.rule.entry.DamageEntryDefinition;
 import io.github.naimjeg.damagenexus.api.rule.entry.DamageEntryDisplay;
 import io.github.naimjeg.obeliskdepths.recipe.ObeliskTemperingRecipe;
 import io.github.naimjeg.obeliskdepths.recipe.ObeliskTemperingRecipeInput;
-import io.github.naimjeg.obeliskdepths.registry.ModRecipeTypes;
+import io.github.naimjeg.obeliskdepths.recipe.ObeliskTemperingRecipeResolver;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.crafting.RecipeHolder;
+import net.minecraft.world.item.crafting.RecipeManager;
 import net.minecraft.world.level.Level;
 
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 
 public final class ObeliskTemperingPreviewResolver {
 
@@ -22,35 +23,37 @@ public final class ObeliskTemperingPreviewResolver {
 
     public static List<TemperingAffixPreview> resolveServerPreview(
             ServerLevel level,
-            ObeliskTemperingRecipeInput input
+            ObeliskTemperingRecipeInput input,
+            Identifier directionId
     ) {
-        Optional<RecipeHolder<ObeliskTemperingRecipe>> foundRecipe =
-                level.recipeAccess().getRecipeFor(
-                        ModRecipeTypes.OBELISK_TEMPERING.get(),
+        List<RecipeHolder<ObeliskTemperingRecipe>> matchingRecipes =
+                ObeliskTemperingRecipeResolver.findBaseMatches(
+                        level.recipeAccess(),
                         input,
                         level
                 );
 
-        return foundRecipe
-                .map(recipe -> resolvePoolPreview(recipe.value().pool()))
-                .orElse(List.of());
-    }
-
-    public static List<TemperingAffixPreview> resolveClientPreview(
-            Level level,
-            ObeliskTemperingRecipeInput input
-    ) {
-        return List.of();
+        return resolveAggregatedPreview(matchingRecipes, directionId);
     }
 
     public static List<TemperingAffixPreview> resolveClientPreview(
             Level level,
             ObeliskTemperingRecipeInput input,
-            int poolHash
+            Identifier directionId
     ) {
-        return ObeliskTemperingPoolRegistry.findPoolByPreviewHash(poolHash)
-                .map(ObeliskTemperingPreviewResolver::resolvePoolPreview)
-                .orElse(List.of());
+        if (level == null
+                || !(level.recipeAccess() instanceof RecipeManager recipeManager)) {
+            return List.of();
+        }
+
+        List<RecipeHolder<ObeliskTemperingRecipe>> matchingRecipes =
+                ObeliskTemperingRecipeResolver.findBaseMatches(
+                        recipeManager,
+                        input,
+                        level
+                );
+
+        return resolveAggregatedPreview(matchingRecipes, directionId);
     }
 
     public static List<TemperingAffixPreview> resolvePoolPreview(
@@ -59,6 +62,39 @@ public final class ObeliskTemperingPreviewResolver {
         return ObeliskTemperingPoolRegistry.entries(poolId)
                 .stream()
                 .map(ObeliskTemperingPreviewResolver::toPreview)
+                .toList();
+    }
+
+    private static List<TemperingAffixPreview> resolveAggregatedPreview(
+            List<RecipeHolder<ObeliskTemperingRecipe>> matchingRecipes,
+            Identifier directionId
+    ) {
+        if (directionId == null) {
+            return List.of();
+        }
+
+        Map<Identifier, AggregatedTemperingDirection> directions =
+                ObeliskTemperingDirectionPoolResolver.resolve(matchingRecipes);
+        AggregatedTemperingDirection direction = directions.get(directionId);
+
+        if (direction == null) {
+            return List.of();
+        }
+
+        return resolveDirectionPreview(direction);
+    }
+
+    public static List<TemperingAffixPreview> resolveDirectionPreview(
+            AggregatedTemperingDirection direction
+    ) {
+        if (direction == null) {
+            return List.of();
+        }
+
+        return direction.entries()
+                .stream()
+                .map(entry -> toPreview(new ObeliskTemperingPoolRegistry
+                        .WeightedEntry(entry.entry(), entry.weight())))
                 .toList();
     }
 

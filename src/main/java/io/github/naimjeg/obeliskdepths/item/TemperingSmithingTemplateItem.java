@@ -26,7 +26,7 @@ public class TemperingSmithingTemplateItem extends Item {
     ) {
         super.appendHoverText(itemStack, context, display, builder, tooltipFlag);
 
-        if (!TemperingTemplateItems.hasTemplateData(itemStack)) {
+        if (!TemperingTemplateItems.isTemperingTemplate(itemStack)) {
             return;
         }
 

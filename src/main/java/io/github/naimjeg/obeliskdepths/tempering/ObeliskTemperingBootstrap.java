@@ -12,20 +12,18 @@ public final class ObeliskTemperingBootstrap {
 
     public static void bootstrap() {
         ObeliskTemperingPoolRegistry.clear();
+        ObeliskTemperingDirectionRegistry.bootstrapBuiltIns();
 
         registerBuiltInPools();
 
         ObeliskDepths.LOGGER.info(
-                "Registered built-in Obelisk tempering pools"
+                "Registered built-in Obelisk tempering pools and directions"
         );
     }
 
     static void registerBuiltInPools() {
         ObeliskTemperingPoolRegistry.register(
-                Identifier.fromNamespaceAndPath(
-                        ObeliskDepths.MOD_ID,
-                        "basic"
-                ),
+                BuiltinTemperingPools.EDGE_TIER_1,
                 List.of(
                         new ObeliskTemperingPoolRegistry.WeightedEntry(
                                 ObeliskTemperingEntryFactory

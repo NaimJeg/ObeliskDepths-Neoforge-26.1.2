@@ -1,5 +1,6 @@
 package io.github.naimjeg.obeliskdepths.worldgen.structure.piece;
 
+import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomType;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphEdgeKind;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonCellBox;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonCellPos;
@@ -7,7 +8,6 @@ import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonConnecto
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutEdge;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutNode;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutPlan;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -16,14 +16,24 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Queue;
+import java.util.PriorityQueue;
 import java.util.Set;
 
 public final class DungeonCorridorRouter {
     public static final int ROOM_CLEARANCE_CELLS = 0;
-    public static final int MAX_INDIVIDUAL_ROUTE_CELLS = 80;
-    public static final int MAX_TOTAL_ROUTE_CELLS = 640;
-    private static final int SEARCH_PADDING_CELLS = 12;
+    public static final int MAX_INDIVIDUAL_ROUTE_CELLS = 32;
+    public static final int MAX_TOTAL_ROUTE_CELLS = 256;
+
+    private static final int SEARCH_PADDING_CELLS = 8;
+    private static final int MAX_EXPLORED_STATES = 24_000;
+    private static final int MOVE_COST = 10;
+    private static final int TURN_COST = 24;
+    private static final int NEAR_UNRELATED_ROOM_COST = 12;
+    private static final int OUTSIDE_LAYOUT_HULL_COST = 8;
+    private static final int UNPLANNED_SIDE_COST = 80;
+    private static final int MAX_ROUTE_TURNS = 3;
+    private static final int ROUTE_STRETCH_ALLOWANCE = 4;
+    private static final double MAX_ROUTE_STRETCH = 1.75D;
 
     private static final List<DungeonConnectorSide> HORIZONTAL_SIDES = List.of(
             DungeonConnectorSide.NORTH,
@@ -43,9 +53,9 @@ public final class DungeonCorridorRouter {
 
         List<DungeonLayoutEdge> orderedEdges = plan.edges()
                 .stream()
-                .sorted(edgeOrder())
+                .sorted(edgeOrder(nodes))
                 .toList();
-        Bounds bounds = searchBounds(plan.nodes());
+        RoutingBounds bounds = searchBounds(plan.nodes());
         Set<Cell> reserved = new HashSet<>();
         List<DungeonRoutedCorridor> routed = new ArrayList<>();
         int totalLength = 0;
@@ -55,37 +65,46 @@ public final class DungeonCorridorRouter {
             DungeonLayoutNode to = nodes.get(edge.toRoomId());
 
             if (from == null || to == null) {
-                throw new IllegalArgumentException("Cannot route corridor with missing endpoint: " + edge.id());
-            }
-
-            DungeonRoutedCorridor corridor = routeEdge(plan.nodes(), reserved, bounds, edge, from, to)
-                    .orElseThrow(() -> new IllegalArgumentException(
-                            "No non-overlapping route for corridor "
-                                    + edge.id()
-                                    + " from="
-                                    + edge.fromRoomId()
-                                    + " to="
-                                    + edge.toRoomId()
-                                    + " fromBox="
-                                    + from.cellBox()
-                                    + " toBox="
-                                    + to.cellBox()
-                                    + " reservedCells="
-                                    + reserved.size()
-                    ));
-
-            if (corridor.lengthCells() > MAX_INDIVIDUAL_ROUTE_CELLS) {
                 throw new IllegalArgumentException(
-                        "Corridor route exceeds maximum length: "
-                                + corridor.edgeId()
-                                + " lengthCells="
-                                + corridor.lengthCells()
+                        "Cannot route corridor with missing endpoint: " + edge.id()
                 );
             }
 
+            RouteCandidate candidate = routeEdge(
+                    plan.nodes(),
+                    reserved,
+                    bounds,
+                    edge,
+                    from,
+                    to
+            ).orElseThrow(() -> new IllegalArgumentException(
+                    "No non-overlapping route for corridor "
+                            + edge.id()
+                            + " from="
+                            + edge.fromRoomId()
+                            + " to="
+                            + edge.toRoomId()
+                            + " fromBox="
+                            + from.cellBox()
+                            + " toBox="
+                            + to.cellBox()
+                            + " reservedCells="
+                            + reserved.size()
+            ));
+            DungeonRoutedCorridor corridor = candidate.corridor();
+
+            validateRouteQuality(
+                    corridor,
+                    candidate.start(),
+                    candidate.goal()
+            );
+
             totalLength += corridor.lengthCells();
             if (totalLength > MAX_TOTAL_ROUTE_CELLS) {
-                throw new IllegalArgumentException("Total corridor route length exceeds budget: " + totalLength);
+                throw new IllegalArgumentException(
+                        "Total corridor route length exceeds budget: "
+                                + totalLength
+                );
             }
 
             for (DungeonCellPos pos : corridor.path()) {
@@ -97,16 +116,235 @@ public final class DungeonCorridorRouter {
         return new DungeonRoutingResult(routed);
     }
 
-    private static Optional<DungeonRoutedCorridor> routeEdge(
+    private static Optional<RouteCandidate> routeEdge(
             List<DungeonLayoutNode> rooms,
             Set<Cell> reserved,
-            Bounds bounds,
+            RoutingBounds bounds,
             DungeonLayoutEdge edge,
             DungeonLayoutNode from,
             DungeonLayoutNode to
     ) {
-        List<DungeonConnectorSide> fromSides = orderedSides(from, to);
-        List<DungeonConnectorSide> toSides = orderedSides(to, from);
+        if (!edge.plannedPath().isEmpty()) {
+            return plannedRoute(
+                    rooms,
+                    reserved,
+                    bounds,
+                    edge,
+                    from,
+                    to
+            );
+        }
+
+        if (edge.kind() == DungeonGraphEdgeKind.TREE) {
+            Optional<RouteCandidate> direct = directTreeRoute(
+                    rooms,
+                    reserved,
+                    bounds,
+                    edge,
+                    from,
+                    to
+            );
+
+            if (direct.isPresent()) {
+                return direct;
+            }
+        }
+
+        Optional<RouteCandidate> planned = bestRouteForSides(
+                rooms,
+                reserved,
+                bounds,
+                edge,
+                from,
+                to,
+                List.of(edge.fromSide()),
+                List.of(edge.toSide())
+        );
+
+        if (planned.isPresent()) {
+            return planned;
+        }
+
+        // Keep the layout authoritative: alternatives are considered only as a
+        // failure recovery path, and they are heavily penalized.
+        return bestRouteForSides(
+                rooms,
+                reserved,
+                bounds,
+                edge,
+                from,
+                to,
+                orderedSides(from, to, edge.fromSide()),
+                orderedSides(to, from, edge.toSide())
+        );
+    }
+
+    private static Optional<RouteCandidate> plannedRoute(
+            List<DungeonLayoutNode> rooms,
+            Set<Cell> reserved,
+            RoutingBounds bounds,
+            DungeonLayoutEdge edge,
+            DungeonLayoutNode from,
+            DungeonLayoutNode to
+    ) {
+        List<Cell> path = edge.plannedPath()
+                .stream()
+                .map(pos -> new Cell(pos.x(), pos.z()))
+                .toList();
+
+        if (path.isEmpty()) {
+            return Optional.empty();
+        }
+
+        Cell start = path.getFirst();
+        Cell goal = path.getLast();
+
+        if (!exteriorPorts(from, edge.fromSide()).contains(start)
+                || !exteriorPorts(to, edge.toSide()).contains(goal)) {
+            throw new IllegalArgumentException(
+                    "Planned corridor endpoints do not match connector sides: "
+                            + edge.id()
+            );
+        }
+
+        for (Cell cell : path) {
+            if (!bounds.containsSearch(cell)
+                    || reserved.contains(cell)
+                    || insideAnyRoom(rooms, cell)) {
+                throw new IllegalArgumentException(
+                        "Planned corridor is obstructed: edge="
+                                + edge.id()
+                                + " cell="
+                                + cell
+                );
+            }
+        }
+
+        DungeonRoutedCorridor corridor = new DungeonRoutedCorridor(
+                edge.id(),
+                edge.fromRoomId(),
+                edge.toRoomId(),
+                edge.fromSide(),
+                edge.toSide(),
+                edge.kind(),
+                edge.plannedPath()
+        );
+        return Optional.of(new RouteCandidate(
+                corridor,
+                start,
+                goal,
+                path.size() * MOVE_COST
+                        + countCellTurns(path) * TURN_COST
+        ));
+    }
+
+    private static Optional<RouteCandidate> directTreeRoute(
+            List<DungeonLayoutNode> rooms,
+            Set<Cell> reserved,
+            RoutingBounds bounds,
+            DungeonLayoutEdge edge,
+            DungeonLayoutNode from,
+            DungeonLayoutNode to
+    ) {
+        Set<Cell> blocked = blockedCells(
+                rooms,
+                from.roomId(),
+                to.roomId()
+        );
+        blocked.addAll(reserved);
+        RouteCandidate best = null;
+
+        for (Cell start : orderedPorts(from, edge.fromSide(), to)) {
+            for (Cell goal : orderedPorts(to, edge.toSide(), from)) {
+                List<Cell> path = axisAlignedPath(start, goal);
+
+                if (path.isEmpty()) {
+                    continue;
+                }
+
+                boolean legal = true;
+                for (Cell cell : path) {
+                    if (!bounds.containsSearch(cell)
+                            || blocked.contains(cell)) {
+                        legal = false;
+                        break;
+                    }
+                }
+
+                if (!legal) {
+                    continue;
+                }
+
+                DungeonRoutedCorridor corridor = new DungeonRoutedCorridor(
+                        edge.id(),
+                        edge.fromRoomId(),
+                        edge.toRoomId(),
+                        edge.fromSide(),
+                        edge.toSide(),
+                        edge.kind(),
+                        path.stream()
+                                .map(cell -> new DungeonCellPos(
+                                        cell.x(),
+                                        0,
+                                        cell.z()
+                                ))
+                                .toList()
+                );
+                RouteCandidate candidate = new RouteCandidate(
+                        corridor,
+                        start,
+                        goal,
+                        path.size() * MOVE_COST
+                );
+
+                if (best == null
+                        || routeCandidateOrder().compare(candidate, best) < 0) {
+                    best = candidate;
+                }
+            }
+        }
+
+        return Optional.ofNullable(best);
+    }
+
+    private static List<Cell> axisAlignedPath(
+            Cell start,
+            Cell goal
+    ) {
+        List<Cell> path = new ArrayList<>();
+
+        if (start.x() == goal.x()) {
+            for (int z = Math.min(start.z(), goal.z());
+                 z <= Math.max(start.z(), goal.z());
+                 z++) {
+                path.add(new Cell(start.x(), z));
+            }
+        } else if (start.z() == goal.z()) {
+            for (int x = Math.min(start.x(), goal.x());
+                 x <= Math.max(start.x(), goal.x());
+                 x++) {
+                path.add(new Cell(x, start.z()));
+            }
+        }
+
+        if (!path.isEmpty() && !path.get(0).equals(start)) {
+            java.util.Collections.reverse(path);
+        }
+
+        return path;
+    }
+
+    private static Optional<RouteCandidate> bestRouteForSides(
+            List<DungeonLayoutNode> rooms,
+            Set<Cell> reserved,
+            RoutingBounds bounds,
+            DungeonLayoutEdge edge,
+            DungeonLayoutNode from,
+            DungeonLayoutNode to,
+            List<DungeonConnectorSide> fromSides,
+            List<DungeonConnectorSide> toSides
+    ) {
+        RouteCandidate best = null;
 
         for (DungeonConnectorSide fromSide : fromSides) {
             List<Cell> startPorts = orderedPorts(from, fromSide, to)
@@ -122,13 +360,32 @@ public final class DungeonCorridorRouter {
 
                 for (Cell start : startPorts) {
                     for (Cell goal : goalPorts) {
-                        List<Cell> path = bfs(rooms, reserved, bounds, from.roomId(), to.roomId(), start, goal);
+                        List<Cell> path = aStar(
+                                rooms,
+                                reserved,
+                                bounds,
+                                from.roomId(),
+                                to.roomId(),
+                                start,
+                                goal
+                        );
 
                         if (path.isEmpty()) {
                             continue;
                         }
 
-                        return Optional.of(new DungeonRoutedCorridor(
+                        int sidePenalty = 0;
+                        if (fromSide != edge.fromSide()) {
+                            sidePenalty += UNPLANNED_SIDE_COST;
+                        }
+                        if (toSide != edge.toSide()) {
+                            sidePenalty += UNPLANNED_SIDE_COST;
+                        }
+
+                        int score = path.size() * MOVE_COST
+                                + countCellTurns(path) * TURN_COST
+                                + sidePenalty;
+                        DungeonRoutedCorridor corridor = new DungeonRoutedCorridor(
                                 edge.id(),
                                 edge.fromRoomId(),
                                 edge.toRoomId(),
@@ -136,21 +393,36 @@ public final class DungeonCorridorRouter {
                                 toSide,
                                 edge.kind(),
                                 path.stream()
-                                        .map(cell -> new DungeonCellPos(cell.x(), 0, cell.z()))
+                                        .map(cell -> new DungeonCellPos(
+                                                cell.x(),
+                                                0,
+                                                cell.z()
+                                        ))
                                         .toList()
-                        ));
+                        );
+                        RouteCandidate candidate = new RouteCandidate(
+                                corridor,
+                                start,
+                                goal,
+                                score
+                        );
+
+                        if (best == null
+                                || routeCandidateOrder().compare(candidate, best) < 0) {
+                            best = candidate;
+                        }
                     }
                 }
             }
         }
 
-        return Optional.empty();
+        return Optional.ofNullable(best);
     }
 
-    private static List<Cell> bfs(
+    private static List<Cell> aStar(
             List<DungeonLayoutNode> rooms,
             Set<Cell> reserved,
-            Bounds bounds,
+            RoutingBounds bounds,
             String fromRoomId,
             String toRoomId,
             Cell start,
@@ -166,31 +438,74 @@ public final class DungeonCorridorRouter {
         blocked.remove(start);
         blocked.remove(goal);
 
-        Queue<Cell> queue = new ArrayDeque<>();
-        Map<Cell, Cell> previous = new HashMap<>();
-        Set<Cell> visited = new HashSet<>();
+        RouteState startState = new RouteState(start, null);
+        Map<RouteState, Integer> bestCost = new HashMap<>();
+        Map<RouteState, RouteState> previous = new HashMap<>();
+        PriorityQueue<SearchNode> open = new PriorityQueue<>(searchNodeOrder());
+        long sequence = 0L;
 
-        queue.add(start);
-        visited.add(start);
+        bestCost.put(startState, 0);
+        open.add(new SearchNode(
+                startState,
+                0,
+                heuristic(start, goal),
+                sequence++
+        ));
 
-        while (!queue.isEmpty()) {
-            Cell current = queue.remove();
+        int explored = 0;
 
-            if (current.equals(goal)) {
+        while (!open.isEmpty() && explored++ < MAX_EXPLORED_STATES) {
+            SearchNode currentNode = open.remove();
+            RouteState current = currentNode.state();
+            int knownCost = bestCost.getOrDefault(current, Integer.MAX_VALUE);
+
+            if (currentNode.cost() != knownCost) {
+                continue;
+            }
+
+            if (current.cell().equals(goal)) {
                 return reconstruct(previous, current);
             }
 
-            if (previous.size() > MAX_INDIVIDUAL_ROUTE_CELLS * MAX_INDIVIDUAL_ROUTE_CELLS) {
-                break;
-            }
+            for (Step step : orderedSteps(current.cell(), goal)) {
+                Cell nextCell = step.cell();
 
-            for (Cell next : orderedNeighbors(current, goal)) {
-                if (!bounds.contains(next) || blocked.contains(next) || !visited.add(next)) {
+                if (!bounds.containsSearch(nextCell)
+                        || blocked.contains(nextCell)) {
                     continue;
                 }
 
+                int stepCost = MOVE_COST
+                        + turnCost(current.direction(), step.direction())
+                        + roomProximityPenalty(
+                                nextCell,
+                                rooms,
+                                fromRoomId,
+                                toRoomId
+                        )
+                        + bounds.outsideHullDistance(nextCell)
+                        * OUTSIDE_LAYOUT_HULL_COST;
+                int tentativeCost = currentNode.cost() + stepCost;
+                RouteState next = new RouteState(
+                        nextCell,
+                        step.direction()
+                );
+
+                if (tentativeCost >= bestCost.getOrDefault(
+                        next,
+                        Integer.MAX_VALUE
+                )) {
+                    continue;
+                }
+
+                bestCost.put(next, tentativeCost);
                 previous.put(next, current);
-                queue.add(next);
+                open.add(new SearchNode(
+                        next,
+                        tentativeCost,
+                        tentativeCost + heuristic(nextCell, goal),
+                        sequence++
+                ));
             }
         }
 
@@ -198,19 +513,76 @@ public final class DungeonCorridorRouter {
     }
 
     private static List<Cell> reconstruct(
-            Map<Cell, Cell> previous,
-            Cell current
+            Map<RouteState, RouteState> previous,
+            RouteState current
     ) {
         ArrayList<Cell> path = new ArrayList<>();
-        path.add(current);
+        path.add(current.cell());
 
         while (previous.containsKey(current)) {
             current = previous.get(current);
-            path.add(current);
+            path.add(current.cell());
         }
 
         java.util.Collections.reverse(path);
         return path;
+    }
+
+    private static void validateRouteQuality(
+            DungeonRoutedCorridor corridor,
+            Cell start,
+            Cell goal
+    ) {
+        if (corridor.lengthCells() > MAX_INDIVIDUAL_ROUTE_CELLS) {
+            throw new IllegalArgumentException(
+                    "Corridor route exceeds maximum length: "
+                            + corridor.edgeId()
+                            + " lengthCells="
+                            + corridor.lengthCells()
+            );
+        }
+
+        int directDistance = manhattan(start, goal);
+        int routedSteps = Math.max(0, corridor.lengthCells() - 1);
+        double maximumStretch = corridor.kind() == DungeonGraphEdgeKind.LOOP
+                ? 2.25D
+                : MAX_ROUTE_STRETCH;
+        int stretchAllowance = corridor.kind() == DungeonGraphEdgeKind.LOOP
+                ? ROUTE_STRETCH_ALLOWANCE + 2
+                : ROUTE_STRETCH_ALLOWANCE;
+        int maximumSteps = Math.max(
+                4,
+                (int) Math.ceil(directDistance * maximumStretch)
+                        + stretchAllowance
+        );
+
+        if (routedSteps > maximumSteps) {
+            throw new IllegalArgumentException(
+                    "Corridor has excessive route stretch: edge="
+                            + corridor.edgeId()
+                            + " directSteps="
+                            + directDistance
+                            + " routedSteps="
+                            + routedSteps
+                            + " maximumSteps="
+                            + maximumSteps
+            );
+        }
+
+        int turns = countDungeonTurns(corridor.path());
+        int maximumTurns = corridor.kind() == DungeonGraphEdgeKind.LOOP
+                ? MAX_ROUTE_TURNS + 2
+                : MAX_ROUTE_TURNS;
+        if (turns > maximumTurns) {
+            throw new IllegalArgumentException(
+                    "Corridor has too many turns: edge="
+                            + corridor.edgeId()
+                            + " turns="
+                            + turns
+                            + " maximum="
+                            + maximumTurns
+            );
+        }
     }
 
     private static Set<Cell> blockedCells(
@@ -221,22 +593,68 @@ public final class DungeonCorridorRouter {
         Set<Cell> blocked = new HashSet<>();
 
         for (DungeonLayoutNode room : rooms) {
-            DungeonCellBox box = room.cellBox().expanded(ROOM_CLEARANCE_CELLS);
+            DungeonCellBox box = room.cellBox().expanded(
+                    ROOM_CLEARANCE_CELLS
+            );
 
             for (int x = box.minX(); x < box.maxXExclusive(); x++) {
                 for (int z = box.minZ(); z < box.maxZExclusive(); z++) {
                     blocked.add(new Cell(x, z));
                 }
             }
-
-            if (room.roomId().equals(fromRoomId) || room.roomId().equals(toRoomId)) {
-                for (DungeonConnectorSide side : HORIZONTAL_SIDES) {
-                    blocked.removeAll(exteriorPorts(room, side));
-                }
-            }
         }
 
         return blocked;
+    }
+
+    private static int roomProximityPenalty(
+            Cell cell,
+            List<DungeonLayoutNode> rooms,
+            String fromRoomId,
+            String toRoomId
+    ) {
+        int penalty = 0;
+
+        for (DungeonLayoutNode room : rooms) {
+            if (room.roomId().equals(fromRoomId)
+                    || room.roomId().equals(toRoomId)) {
+                continue;
+            }
+
+            int distance = distanceToBox(cell, room.cellBox());
+            if (distance == 1) {
+                penalty += NEAR_UNRELATED_ROOM_COST;
+            } else if (distance == 2) {
+                penalty += NEAR_UNRELATED_ROOM_COST / 2;
+            }
+        }
+
+        return penalty;
+    }
+
+    private static int distanceToBox(
+            Cell cell,
+            DungeonCellBox box
+    ) {
+        int dx;
+        if (cell.x() < box.minX()) {
+            dx = box.minX() - cell.x();
+        } else if (cell.x() >= box.maxXExclusive()) {
+            dx = cell.x() - box.maxXExclusive() + 1;
+        } else {
+            dx = 0;
+        }
+
+        int dz;
+        if (cell.z() < box.minZ()) {
+            dz = box.minZ() - cell.z();
+        } else if (cell.z() >= box.maxZExclusive()) {
+            dz = cell.z() - box.maxZExclusive() + 1;
+        } else {
+            dz = 0;
+        }
+
+        return dx + dz;
     }
 
     private static boolean insideAnyRoom(
@@ -257,31 +675,56 @@ public final class DungeonCorridorRouter {
         return false;
     }
 
-    private static List<Cell> orderedNeighbors(
+    private static List<Step> orderedSteps(
             Cell current,
             Cell goal
     ) {
-        List<Cell> neighbors = new ArrayList<>(List.of(
-                new Cell(current.x() + 1, current.z()),
-                new Cell(current.x(), current.z() + 1),
-                new Cell(current.x() - 1, current.z()),
-                new Cell(current.x(), current.z() - 1)
+        List<Step> steps = new ArrayList<>(List.of(
+                new Step(
+                        new Cell(current.x(), current.z() - 1),
+                        DungeonConnectorSide.NORTH
+                ),
+                new Step(
+                        new Cell(current.x() + 1, current.z()),
+                        DungeonConnectorSide.EAST
+                ),
+                new Step(
+                        new Cell(current.x(), current.z() + 1),
+                        DungeonConnectorSide.SOUTH
+                ),
+                new Step(
+                        new Cell(current.x() - 1, current.z()),
+                        DungeonConnectorSide.WEST
+                )
         ));
-        neighbors.sort(Comparator
-                .comparingInt((Cell cell) -> Math.abs(cell.x() - goal.x()) + Math.abs(cell.z() - goal.z()))
-                .thenComparingInt(Cell::x)
-                .thenComparingInt(Cell::z));
-        return neighbors;
+        steps.sort(Comparator
+                .comparingInt((Step step) -> manhattan(step.cell(), goal))
+                .thenComparingInt(step -> step.direction().ordinal()));
+        return steps;
     }
 
     private static List<DungeonConnectorSide> orderedSides(
             DungeonLayoutNode source,
-            DungeonLayoutNode target
+            DungeonLayoutNode target,
+            DungeonConnectorSide planned
     ) {
         DungeonConnectorSide preferred = preferredSide(source, target);
-        ArrayList<DungeonConnectorSide> sides = new ArrayList<>(HORIZONTAL_SIDES);
+        ArrayList<DungeonConnectorSide> sides = new ArrayList<>(
+                HORIZONTAL_SIDES
+        );
         sides.sort(Comparator
-                .comparingInt((DungeonConnectorSide side) -> side == preferred ? 0 : side == preferred.opposite() ? 2 : 1)
+                .comparingInt((DungeonConnectorSide side) -> {
+                    if (side == planned) {
+                        return 0;
+                    }
+                    if (side == preferred) {
+                        return 1;
+                    }
+                    if (side == planned.opposite()) {
+                        return 3;
+                    }
+                    return 2;
+                })
                 .thenComparingInt(Enum::ordinal));
         return sides;
     }
@@ -290,18 +733,20 @@ public final class DungeonCorridorRouter {
             DungeonLayoutNode source,
             DungeonLayoutNode target
     ) {
-        int sourceCenterX = source.cellOrigin().x() + source.footprint().widthCells() / 2;
-        int sourceCenterZ = source.cellOrigin().z() + source.footprint().depthCells() / 2;
-        int targetCenterX = target.cellOrigin().x() + target.footprint().widthCells() / 2;
-        int targetCenterZ = target.cellOrigin().z() + target.footprint().depthCells() / 2;
-        int dx = targetCenterX - sourceCenterX;
-        int dz = targetCenterZ - sourceCenterZ;
+        Cell sourceCenter = roomCenter(source);
+        Cell targetCenter = roomCenter(target);
+        int dx = targetCenter.x() - sourceCenter.x();
+        int dz = targetCenter.z() - sourceCenter.z();
 
         if (Math.abs(dx) >= Math.abs(dz)) {
-            return dx >= 0 ? DungeonConnectorSide.EAST : DungeonConnectorSide.WEST;
+            return dx >= 0
+                    ? DungeonConnectorSide.EAST
+                    : DungeonConnectorSide.WEST;
         }
 
-        return dz >= 0 ? DungeonConnectorSide.SOUTH : DungeonConnectorSide.NORTH;
+        return dz >= 0
+                ? DungeonConnectorSide.SOUTH
+                : DungeonConnectorSide.NORTH;
     }
 
     private static List<Cell> orderedPorts(
@@ -313,7 +758,10 @@ public final class DungeonCorridorRouter {
         return exteriorPorts(room, side)
                 .stream()
                 .sorted(Comparator
-                        .comparingInt((Cell cell) -> Math.abs(cell.x() - targetCenter.x()) + Math.abs(cell.z() - targetCenter.z()))
+                        .comparingInt((Cell cell) -> manhattan(
+                                cell,
+                                targetCenter
+                        ))
                         .thenComparingInt(Cell::x)
                         .thenComparingInt(Cell::z))
                 .toList();
@@ -347,7 +795,9 @@ public final class DungeonCorridorRouter {
                     ports.add(new Cell(box.maxXExclusive(), z));
                 }
             }
-            case UP, DOWN -> throw new UnsupportedOperationException("Vertical routing is not supported: " + side);
+            case UP, DOWN -> throw new UnsupportedOperationException(
+                    "Vertical routing is not supported: " + side
+            );
         }
 
         return ports;
@@ -361,16 +811,38 @@ public final class DungeonCorridorRouter {
         );
     }
 
-    private static Comparator<DungeonLayoutEdge> edgeOrder() {
+    private static Comparator<DungeonLayoutEdge> edgeOrder(
+            Map<String, DungeonLayoutNode> nodes
+    ) {
         return Comparator
-                .comparingInt(DungeonCorridorRouter::edgePriority)
+                .comparingInt((DungeonLayoutEdge edge) -> edgePriority(
+                        edge,
+                        nodes
+                ))
+                .thenComparing(
+                        Comparator.comparingInt(
+                                (DungeonLayoutEdge edge) -> estimatedDistance(
+                                        edge,
+                                        nodes
+                                )
+                        ).reversed()
+                )
                 .thenComparing(DungeonLayoutEdge::id);
     }
 
-    private static int edgePriority(DungeonLayoutEdge edge) {
-        if (edge.kind() == DungeonGraphEdgeKind.TREE
-                && ((edge.fromRoomId().equals("boss") && edge.toRoomId().equals("exit"))
-                || (edge.fromRoomId().equals("exit") && edge.toRoomId().equals("boss")))) {
+    private static int edgePriority(
+            DungeonLayoutEdge edge,
+            Map<String, DungeonLayoutNode> nodes
+    ) {
+        DungeonLayoutNode from = nodes.get(edge.fromRoomId());
+        DungeonLayoutNode to = nodes.get(edge.toRoomId());
+
+        if (from != null
+                && to != null
+                && ((from.type() == DungeonRoomType.BOSS
+                && to.type() == DungeonRoomType.EXIT)
+                || (from.type() == DungeonRoomType.EXIT
+                && to.type() == DungeonRoomType.BOSS))) {
             return 0;
         }
 
@@ -381,7 +853,23 @@ public final class DungeonCorridorRouter {
         };
     }
 
-    private static Bounds searchBounds(List<DungeonLayoutNode> rooms) {
+    private static int estimatedDistance(
+            DungeonLayoutEdge edge,
+            Map<String, DungeonLayoutNode> nodes
+    ) {
+        DungeonLayoutNode from = nodes.get(edge.fromRoomId());
+        DungeonLayoutNode to = nodes.get(edge.toRoomId());
+
+        if (from == null || to == null) {
+            return 0;
+        }
+
+        return manhattan(roomCenter(from), roomCenter(to));
+    }
+
+    private static RoutingBounds searchBounds(
+            List<DungeonLayoutNode> rooms
+    ) {
         int minX = Integer.MAX_VALUE;
         int minZ = Integer.MAX_VALUE;
         int maxX = Integer.MIN_VALUE;
@@ -395,12 +883,129 @@ public final class DungeonCorridorRouter {
             maxZ = Math.max(maxZ, box.maxZExclusive());
         }
 
-        return new Bounds(
+        return new RoutingBounds(
+                minX,
+                minZ,
+                maxX,
+                maxZ,
                 minX - SEARCH_PADDING_CELLS,
                 minZ - SEARCH_PADDING_CELLS,
                 maxX + SEARCH_PADDING_CELLS,
                 maxZ + SEARCH_PADDING_CELLS
         );
+    }
+
+    private static Comparator<RouteCandidate> routeCandidateOrder() {
+        return Comparator
+                .comparingInt(RouteCandidate::score)
+                .thenComparingInt(candidate -> candidate.start().x())
+                .thenComparingInt(candidate -> candidate.start().z())
+                .thenComparingInt(candidate -> candidate.goal().x())
+                .thenComparingInt(candidate -> candidate.goal().z());
+    }
+
+    private static Comparator<SearchNode> searchNodeOrder() {
+        return Comparator
+                .comparingInt(SearchNode::estimatedTotalCost)
+                .thenComparingInt(SearchNode::cost)
+                .thenComparingInt(node -> node.state().cell().x())
+                .thenComparingInt(node -> node.state().cell().z())
+                .thenComparingInt(node -> node.state().direction() == null
+                        ? -1
+                        : node.state().direction().ordinal())
+                .thenComparingLong(SearchNode::sequence);
+    }
+
+    private static int heuristic(
+            Cell current,
+            Cell goal
+    ) {
+        return manhattan(current, goal) * MOVE_COST;
+    }
+
+    private static int turnCost(
+            DungeonConnectorSide previous,
+            DungeonConnectorSide next
+    ) {
+        return previous == null || previous == next ? 0 : TURN_COST;
+    }
+
+    private static int countCellTurns(List<Cell> path) {
+        if (path.size() < 3) {
+            return 0;
+        }
+
+        int turns = 0;
+        int previousDx = Integer.compare(
+                path.get(1).x() - path.get(0).x(),
+                0
+        );
+        int previousDz = Integer.compare(
+                path.get(1).z() - path.get(0).z(),
+                0
+        );
+
+        for (int index = 2; index < path.size(); index++) {
+            int dx = Integer.compare(
+                    path.get(index).x() - path.get(index - 1).x(),
+                    0
+            );
+            int dz = Integer.compare(
+                    path.get(index).z() - path.get(index - 1).z(),
+                    0
+            );
+
+            if (dx != previousDx || dz != previousDz) {
+                turns++;
+            }
+            previousDx = dx;
+            previousDz = dz;
+        }
+
+        return turns;
+    }
+
+    private static int countDungeonTurns(List<DungeonCellPos> path) {
+        if (path.size() < 3) {
+            return 0;
+        }
+
+        int turns = 0;
+        int previousDx = Integer.compare(
+                path.get(1).x() - path.get(0).x(),
+                0
+        );
+        int previousDz = Integer.compare(
+                path.get(1).z() - path.get(0).z(),
+                0
+        );
+
+        for (int index = 2; index < path.size(); index++) {
+            int dx = Integer.compare(
+                    path.get(index).x() - path.get(index - 1).x(),
+                    0
+            );
+            int dz = Integer.compare(
+                    path.get(index).z() - path.get(index - 1).z(),
+                    0
+            );
+
+            if (dx != previousDx || dz != previousDz) {
+                turns++;
+            }
+            previousDx = dx;
+            previousDz = dz;
+        }
+
+        return turns;
+    }
+
+    private static int manhattan(
+            Cell first,
+            Cell second
+    ) {
+        return Math.abs(first.x() - second.x())
+                + Math.abs(first.z() - second.z());
     }
 
     private record Cell(
@@ -409,17 +1014,67 @@ public final class DungeonCorridorRouter {
     ) {
     }
 
-    private record Bounds(
-            int minX,
-            int minZ,
-            int maxXExclusive,
-            int maxZExclusive
+    private record Step(
+            Cell cell,
+            DungeonConnectorSide direction
     ) {
-        private boolean contains(Cell cell) {
-            return cell.x() >= this.minX
-                    && cell.x() < this.maxXExclusive
-                    && cell.z() >= this.minZ
-                    && cell.z() < this.maxZExclusive;
+    }
+
+    private record RouteState(
+            Cell cell,
+            DungeonConnectorSide direction
+    ) {
+    }
+
+    private record SearchNode(
+            RouteState state,
+            int cost,
+            int estimatedTotalCost,
+            long sequence
+    ) {
+    }
+
+    private record RouteCandidate(
+            DungeonRoutedCorridor corridor,
+            Cell start,
+            Cell goal,
+            int score
+    ) {
+    }
+
+    private record RoutingBounds(
+            int hullMinX,
+            int hullMinZ,
+            int hullMaxXExclusive,
+            int hullMaxZExclusive,
+            int searchMinX,
+            int searchMinZ,
+            int searchMaxXExclusive,
+            int searchMaxZExclusive
+    ) {
+        private boolean containsSearch(Cell cell) {
+            return cell.x() >= this.searchMinX
+                    && cell.x() < this.searchMaxXExclusive
+                    && cell.z() >= this.searchMinZ
+                    && cell.z() < this.searchMaxZExclusive;
+        }
+
+        private int outsideHullDistance(Cell cell) {
+            int dx = 0;
+            if (cell.x() < this.hullMinX) {
+                dx = this.hullMinX - cell.x();
+            } else if (cell.x() >= this.hullMaxXExclusive) {
+                dx = cell.x() - this.hullMaxXExclusive + 1;
+            }
+
+            int dz = 0;
+            if (cell.z() < this.hullMinZ) {
+                dz = this.hullMinZ - cell.z();
+            } else if (cell.z() >= this.hullMaxZExclusive) {
+                dz = cell.z() - this.hullMaxZExclusive + 1;
+            }
+
+            return dx + dz;
         }
     }
 }

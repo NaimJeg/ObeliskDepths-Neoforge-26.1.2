@@ -851,6 +851,24 @@ public final class DungeonManagerSavedData extends SavedData {
                 && record.status() == DungeonSiteUsageStatus.RESERVED;
     }
 
+    public String generatedSiteReservationRejectionReason(DungeonSiteKey siteKey) {
+        DungeonSiteRecord record = this.siteRecords.get(siteKey);
+
+        if (record == null) {
+            return "candidate_accepted";
+        }
+
+        if (record.status() == DungeonSiteUsageStatus.RESERVED) {
+            return "candidate_reserved";
+        }
+
+        if (record.status().isTerminal()) {
+            return "candidate_already_reached";
+        }
+
+        return "candidate_predicate_rejected";
+    }
+
     public Optional<DungeonSiteRecord> siteRecord(DungeonSiteKey siteKey) {
         return Optional.ofNullable(this.siteRecords.get(siteKey));
     }

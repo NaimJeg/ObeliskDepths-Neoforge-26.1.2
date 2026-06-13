@@ -20,23 +20,24 @@ public final class ObeliskDungeonSiteOverlapGuard {
         int radiusBlocks = conservativeRadiusFor(currentBounds);
         int minimumCenterSeparationBlocks = ObeliskDungeonPlacementSettings.SEPARATION * 16;
 
-        if (radiusBlocks * 2 <= minimumCenterSeparationBlocks) {
-            ObeliskDepths.LOGGER.debug(
-                    "[OD structure] cheap overlap check passed chunk={} radiusBlocks={} minimumCenterSeparationBlocks={}",
-                    currentChunk,
-                    radiusBlocks,
-                    minimumCenterSeparationBlocks
-            );
-            return Optional.empty();
-        }
-
-        ObeliskDepths.LOGGER.warn(
-                "[OD structure] conservative dungeon radius {} exceeds placement separation {}; rejecting candidate chunk={} without neighbor layout prediction",
+        /*
+         * This is a diagnostic only.
+         *
+         * The structure set's minecraft:random_spread placement is the
+         * authoritative start-position filter. Runtime allocation discovers
+         * already-generated starts; worldgen must not reject every valid start
+         * just because the temporary debug layout's conservative bounds exceed
+         * the configured separation. Physical overlap prevention for final
+         * authored layouts belongs in structure placement/configuration, not in
+         * a runtime-style neighboring-layout prediction pass.
+         */
+        ObeliskDepths.LOGGER.debug(
+                "[OD structure] cheap overlap diagnostic chunk={} radiusBlocks={} minimumCenterSeparationBlocks={} placementDecision=vanilla_random_spread",
+                currentChunk,
                 radiusBlocks,
-                minimumCenterSeparationBlocks,
-                currentChunk
+                minimumCenterSeparationBlocks
         );
-        return Optional.of(new Rejection(currentChunk, currentBounds));
+        return Optional.empty();
     }
 
     public static ChunkPos candidateChunk(

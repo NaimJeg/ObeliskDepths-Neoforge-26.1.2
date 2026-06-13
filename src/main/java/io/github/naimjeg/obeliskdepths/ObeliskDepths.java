@@ -1,6 +1,9 @@
 package io.github.naimjeg.obeliskdepths;
 
 import com.mojang.logging.LogUtils;
+import io.github.naimjeg.obeliskdepths.network.ClientboundTemperingDirectionStatePayload;
+import io.github.naimjeg.obeliskdepths.network.SelectTemperingDirectionPayload;
+import io.github.naimjeg.obeliskdepths.tempering.ObeliskTemperingDirectionReloadListener;
 import io.github.naimjeg.obeliskdepths.tempering.ObeliskTemperingPoolReloadListener;
 import io.github.naimjeg.obeliskdepths.registry.*;
 import net.minecraft.resources.Identifier;
@@ -10,6 +13,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.AddServerReloadListenersEvent;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.resource.ListenerKey;
 import org.slf4j.Logger;
 
@@ -23,6 +27,12 @@ public final class ObeliskDepths {
             ListenerKey.create(Identifier.fromNamespaceAndPath(
                     ObeliskDepths.MOD_ID,
                     "obelisk_tempering_pools"
+            ));
+    private static final ListenerKey<ObeliskTemperingDirectionReloadListener>
+            TEMPERING_DIRECTION_RELOAD_LISTENER =
+            ListenerKey.create(Identifier.fromNamespaceAndPath(
+                    ObeliskDepths.MOD_ID,
+                    "obelisk_tempering_directions"
             ));
 
     public ObeliskDepths(
@@ -40,6 +50,7 @@ public final class ObeliskDepths {
         ModWorldgen.register(modEventBus);
 
         modEventBus.addListener(this::commonSetup);
+        modEventBus.addListener(this::registerPayloadHandlers);
         NeoForge.EVENT_BUS.addListener(this::addReloadListeners);
     }
 
@@ -52,5 +63,23 @@ public final class ObeliskDepths {
                 TEMPERING_POOL_RELOAD_LISTENER,
                 new ObeliskTemperingPoolReloadListener()
         );
+        event.addRetainedListener(
+                TEMPERING_DIRECTION_RELOAD_LISTENER,
+                new ObeliskTemperingDirectionReloadListener()
+        );
+    }
+
+    private void registerPayloadHandlers(RegisterPayloadHandlersEvent event) {
+        event.registrar("1")
+                .playToServer(
+                        SelectTemperingDirectionPayload.TYPE,
+                        SelectTemperingDirectionPayload.STREAM_CODEC,
+                        SelectTemperingDirectionPayload::handle
+                )
+                .playToClient(
+                        ClientboundTemperingDirectionStatePayload.TYPE,
+                        ClientboundTemperingDirectionStatePayload.STREAM_CODEC,
+                        ClientboundTemperingDirectionStatePayload::handle
+                );
     }
 }

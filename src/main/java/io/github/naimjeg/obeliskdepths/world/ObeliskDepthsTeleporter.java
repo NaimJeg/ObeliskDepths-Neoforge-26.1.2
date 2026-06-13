@@ -5,6 +5,7 @@ import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonInstance;
 import io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSafeSpawnResolver;
 import io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSite;
 import io.github.naimjeg.obeliskdepths.dungeon.site.reader.GeneratedDungeonSiteReader;
+import io.github.naimjeg.obeliskdepths.dungeon.site.reader.DungeonStructureStartReader;
 import io.github.naimjeg.obeliskdepths.dungeon.state.DungeonManagerSavedData;
 import io.github.naimjeg.obeliskdepths.registry.ModDimensions;
 import net.minecraft.core.BlockPos;
@@ -12,12 +13,12 @@ import net.minecraft.core.SectionPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.portal.TeleportTransition;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.Optional;
+import java.util.Locale;
 
 public final class ObeliskDepthsTeleporter {
     private ObeliskDepthsTeleporter() {
@@ -79,12 +80,21 @@ public final class ObeliskDepthsTeleporter {
             return Optional.empty();
         }
 
-        if (!loadExistingEntryChunk(targetLevel, site.get())) {
+        DungeonStructureStartReader.ExistingChunkLookupResult entryChunk =
+                loadExistingEntryChunk(targetLevel, site.get());
+
+        if (entryChunk.chunk().isEmpty()) {
             ObeliskDepths.LOGGER.error(
-                    "[OD teleport] entry chunk is not already generated or loaded instance={} site={} start={}",
+                    "[OD teleport] entry chunk is not already generated or loaded instance={} site={} start={} entryChunk={} mechanism={} persisted={} persistedStatus={} returnedStatus={} reason={}",
                     instance.id(),
                     instance.siteKey(),
-                    site.get().startPos()
+                    site.get().startPos(),
+                    entryChunk.chunkPos(),
+                    entryChunk.mechanism(),
+                    entryChunk.persisted(),
+                    entryChunk.persistedStatus().map(Object::toString).orElse("<none>"),
+                    entryChunk.returnedStatus().map(Object::toString).orElse("<none>"),
+                    entryChunk.rejectionReason().name().toLowerCase(Locale.ROOT)
             );
             return Optional.empty();
         }
@@ -111,7 +121,7 @@ public final class ObeliskDepthsTeleporter {
         );
     }
 
-    private static boolean loadExistingEntryChunk(
+    private static DungeonStructureStartReader.ExistingChunkLookupResult loadExistingEntryChunk(
             ServerLevel level,
             DungeonSite site
     ) {
@@ -119,14 +129,28 @@ public final class ObeliskDepthsTeleporter {
                 SectionPos.blockToSectionCoord(site.startPos().getX()),
                 SectionPos.blockToSectionCoord(site.startPos().getZ())
         );
-        ChunkAccess chunk = level.getChunk(
-                chunkPos.x(),
-                chunkPos.z(),
-                ChunkStatus.FULL,
-                false
+        DungeonStructureStartReader.ExistingChunkLookupResult lookup =
+                DungeonStructureStartReader.lookupExistingChunk(
+                        level,
+                        chunkPos,
+                        ChunkStatus.FULL
+                );
+
+        ObeliskDepths.LOGGER.debug(
+                "[OD teleport] entry chunk lookup site={} start={} entryChunk={} loaded={} persisted={} mechanism={} persistedStatus={} returnedStatus={} success={} reason={}",
+                site.key(),
+                site.startPos(),
+                chunkPos,
+                lookup.currentlyLoaded(),
+                lookup.persisted(),
+                lookup.mechanism(),
+                lookup.persistedStatus().map(Object::toString).orElse("<none>"),
+                lookup.returnedStatus().map(Object::toString).orElse("<none>"),
+                lookup.chunk().isPresent(),
+                lookup.rejectionReason().name().toLowerCase(Locale.ROOT)
         );
 
-        return chunk != null;
+        return lookup;
     }
 
     public static Optional<ServerPlayer> teleportToLevel(

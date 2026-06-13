@@ -38,11 +38,17 @@ public final class ModCreativeTabs {
                     "obelisk_items",
                     () -> CreativeModeTab.builder()
                             .title(Component.translatable("itemGroup." + ObeliskDepths.MOD_ID + ".obelisk_items"))
-                            .icon(() -> new ItemStack(ModItems.TEMPERING_SMITHING_TEMPLATE.get()))
+                            .icon(() ->
+                                    TemperingTemplateItems.createTemplate(1, 0.0F)
+                            )
                             .displayItems((parameters, output) -> {
-                                output.accept(ModItems.TEMPERING_SMITHING_TEMPLATE.get());
-                                output.accept(TemperingTemplateItems.createTemplate(1, 1.00f));
-                                output.accept(TemperingTemplateItems.createTemplate(2, 1.00f));
+                                output.accept(
+                                        TemperingTemplateItems.createTemplate(1, 0.0F)
+                                );
+
+                                output.accept(
+                                        TemperingTemplateItems.createTemplate(1, 1.0F)
+                                );
                             })
                             .build()
             );

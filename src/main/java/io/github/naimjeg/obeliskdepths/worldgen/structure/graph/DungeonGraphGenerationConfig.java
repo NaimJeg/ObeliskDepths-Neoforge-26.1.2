@@ -19,21 +19,21 @@ record DungeonGraphGenerationConfig(
         int minEntrySectorSeparation
 ) {
     static final DungeonGraphGenerationConfig DEFAULT = new DungeonGraphGenerationConfig(
-            4,
-            4,
+            3,
+            3,
+            2,
             2,
             3,
             4,
-            6,
-            1,
-            6,
-            0,
             2,
-            4,
+            1,
+            0,
             1,
             1,
-            48,
-            4,
+            2,
+            2,
+            24,
+            3,
             1
     );
 }

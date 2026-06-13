@@ -21,7 +21,10 @@ public final class ModTags {
         private static TagKey<Block> create(String path) {
             return TagKey.create(
                     Registries.BLOCK,
-                    Identifier.fromNamespaceAndPath(ObeliskDepths.MOD_ID, path)
+                    Identifier.fromNamespaceAndPath(
+                            ObeliskDepths.MOD_ID,
+                            path
+                    )
             );
         }
     }
@@ -30,13 +33,19 @@ public final class ModTags {
         public static final TagKey<Item> GREAT_SWAMP_TAXODIUM_LOGS =
                 create("great_swamp_taxodium_logs");
 
+        public static final TagKey<Item> TEMPERABLE_WEAPONS =
+                create("temperable_weapons");
+
         private Items() {
         }
 
         private static TagKey<Item> create(String path) {
             return TagKey.create(
                     Registries.ITEM,
-                    Identifier.fromNamespaceAndPath(ObeliskDepths.MOD_ID, path)
+                    Identifier.fromNamespaceAndPath(
+                            ObeliskDepths.MOD_ID,
+                            path
+                    )
             );
         }
     }

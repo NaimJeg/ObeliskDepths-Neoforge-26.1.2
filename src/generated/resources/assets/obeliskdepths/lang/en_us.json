@@ -65,9 +65,13 @@
   "message.obeliskdepths.obelisk.invalid_tribute": "Invalid tribute.",
   "message.obeliskdepths.obelisk.no_dimension": "ObeliskDepths dimension was not found.",
   "tempering_direction.obeliskdepths.balance": "Balance",
+  "tempering_direction.obeliskdepths.balance.description": "Balanced tempering draws from all matching balanced pools.",
   "tempering_direction.obeliskdepths.echo": "Echo",
+  "tempering_direction.obeliskdepths.echo.description": "Echo tempering favors unusual resonance affixes.",
   "tempering_direction.obeliskdepths.edge": "Edge",
+  "tempering_direction.obeliskdepths.edge.description": "Edge tempering favors direct offensive affixes.",
   "tempering_direction.obeliskdepths.guard": "Guard",
+  "tempering_direction.obeliskdepths.guard.description": "Guard tempering favors defensive affixes.",
   "tooltip.obeliskdepths.tempering_template.tier": "Tempering Tier: %s",
   "tooltip.obeliskdepths.tempering_template.weight": "Tempering Weight: %s"
 }

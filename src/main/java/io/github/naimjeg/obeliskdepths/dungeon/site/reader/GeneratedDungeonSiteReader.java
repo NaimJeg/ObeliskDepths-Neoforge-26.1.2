@@ -7,6 +7,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 /*
@@ -31,7 +32,20 @@ public final class GeneratedDungeonSiteReader {
             BlockPos origin,
             Predicate<DungeonSiteKey> canUseSite
     ) {
-        for (DungeonSiteKey key : DungeonStructureLocator.findNearestStarts(level, origin, canUseSite)) {
+        return findNearestGeneratedSite(
+                level,
+                origin,
+                (Function<DungeonSiteKey, String>) key ->
+                        canUseSite.test(key) ? "candidate_accepted" : "candidate_predicate_rejected"
+        );
+    }
+
+    public static Optional<DungeonSite> findNearestGeneratedSite(
+            ServerLevel level,
+            BlockPos origin,
+            Function<DungeonSiteKey, String> eligibilityReason
+    ) {
+        for (DungeonSiteKey key : DungeonStructureLocator.findNearestStarts(level, origin, eligibilityReason)) {
             try {
                 Optional<DungeonSite> site = readGeneratedSite(level, key);
 
@@ -43,7 +57,7 @@ public final class GeneratedDungeonSiteReader {
                     continue;
                 }
 
-                if (!validGeneratedSite(site.get())) {
+                if (!isValidGeneratedSite(site.get())) {
                     ObeliskDepths.LOGGER.warn(
                             "[OD locator] rejected candidate reason=incomplete_generated_metadata key={} rooms={} start={}",
                             key,
@@ -74,8 +88,9 @@ public final class GeneratedDungeonSiteReader {
                 .map(start -> GeneratedDungeonSiteProjector.project(key, start));
     }
 
-    private static boolean validGeneratedSite(DungeonSite site) {
-        return !site.rooms().isEmpty()
+    public static boolean isValidGeneratedSite(DungeonSite site) {
+        return site != null
+                && !site.rooms().isEmpty()
                 && site.primaryEntryRoom().isPresent()
                 && site.primaryEntryRoom().get().contains(site.startPos());
     }

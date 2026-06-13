@@ -13,7 +13,10 @@ import io.github.naimjeg.obeliskdepths.dungeon.portal.PortalSessionManager;
 import io.github.naimjeg.obeliskdepths.dungeon.session.DungeonSessionManager;
 import io.github.naimjeg.obeliskdepths.dungeon.tribute.ResolvedTribute;
 import io.github.naimjeg.obeliskdepths.dungeon.tribute.TributeResolver;
+import io.github.naimjeg.obeliskdepths.registry.ModDimensions;
+import io.github.naimjeg.obeliskdepths.registry.ModStructures;
 import io.github.naimjeg.obeliskdepths.world.ObeliskDepthsTeleporter;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.placement.ObeliskDungeonPlacementSettings;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
@@ -115,6 +118,35 @@ public final class ObeliskInteractionHandler {
              * reservation.
              */
             long reserveStart = System.nanoTime();
+            boolean correctTargetDimension =
+                    dungeonLevel.dimension().equals(ModDimensions.OBELISK_DEPTHS_LEVEL);
+            ObeliskDepths.LOGGER.debug(
+                    "[OD locator] lookup begin player={} mode={} obelisk={} sourceDimension={} targetDimension={} searchOrigin={} structureSet={} structure={} placementType=minecraft:random_spread spacing={} separation={} salt={} candidateLimit={} correctTargetDimension={}",
+                    player.getGameProfile().name(),
+                    requestedMode,
+                    obeliskPos,
+                    player.level().dimension().identifier(),
+                    dungeonLevel.dimension().identifier(),
+                    obeliskPos,
+                    ModStructures.OBELISK_DUNGEONS.identifier(),
+                    ModStructures.DEPTHS_SITE.identifier(),
+                    ObeliskDungeonPlacementSettings.SPACING,
+                    ObeliskDungeonPlacementSettings.SEPARATION,
+                    ObeliskDungeonPlacementSettings.SALT,
+                    ObeliskDungeonPlacementSettings.MAX_LOOKUP_CANDIDATES,
+                    correctTargetDimension
+            );
+
+            if (!correctTargetDimension) {
+                ObeliskDepths.LOGGER.warn(
+                        "[OD locator] rejected lookup reason=wrong_target_dimension player={} targetDimension={} expected={}",
+                        player.getGameProfile().name(),
+                        dungeonLevel.dimension().identifier(),
+                        ModDimensions.OBELISK_DEPTHS_LEVEL.identifier()
+                );
+                return false;
+            }
+
             Optional<DungeonInstance> createdInstance =
                     DungeonInstanceService.reserveNearestUnreachedWorldgenSite(
                             dungeonLevel,

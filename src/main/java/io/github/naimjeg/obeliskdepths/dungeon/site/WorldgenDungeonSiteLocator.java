@@ -1,6 +1,7 @@
 package io.github.naimjeg.obeliskdepths.dungeon.site;
 
 import io.github.naimjeg.obeliskdepths.dungeon.site.reader.GeneratedDungeonSiteReader;
+import io.github.naimjeg.obeliskdepths.dungeon.state.DungeonManagerSavedData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 
@@ -31,6 +32,21 @@ public final class WorldgenDungeonSiteLocator {
      *   guessed room layout
      *   guessed bounds
      */
+    public static Optional<ResolvedDungeonSite> findNearestReservableSite(
+            ServerLevel level,
+            BlockPos origin,
+            DungeonManagerSavedData data
+    ) {
+        return GeneratedDungeonSiteReader.findNearestGeneratedSite(
+                level,
+                origin,
+                data::generatedSiteReservationRejectionReason
+        ).map(site -> new ResolvedDungeonSite(
+                site,
+                DungeonSiteProjectionSource.GENERATED_STRUCTURE_START
+        ));
+    }
+
     public static Optional<ResolvedDungeonSite> findNearestReservableSite(
             ServerLevel level,
             BlockPos origin,

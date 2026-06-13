@@ -9,6 +9,7 @@ import net.minecraft.data.PackOutput;
 import net.minecraft.data.tags.IntrinsicHolderTagsProvider;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
 
 public final class ModItemTagProvider extends IntrinsicHolderTagsProvider<Item> {
     public ModItemTagProvider(
@@ -25,6 +26,11 @@ public final class ModItemTagProvider extends IntrinsicHolderTagsProvider<Item> 
 
     @Override
     protected void addTags(HolderLookup.Provider registries) {
+        this.addWoodTags();
+        this.addTemperingTags();
+    }
+
+    private void addWoodTags() {
         for (ModBlocks.WoodBlockSet set : ModBlocks.WOOD_BLOCK_SETS) {
             this.tag(ModTags.Items.GREAT_SWAMP_TAXODIUM_LOGS)
                     .add(
@@ -74,5 +80,17 @@ public final class ModItemTagProvider extends IntrinsicHolderTagsProvider<Item> 
 //            this.tag(ItemTags.HANGING_SIGNS)
 //                    .add(set.hangingSignItem().get());
         }
+    }
+
+    private void addTemperingTags() {
+        this.tag(ModTags.Items.TEMPERABLE_WEAPONS)
+                .add(
+                        Items.WOODEN_SWORD,
+                        Items.STONE_SWORD,
+                        Items.IRON_SWORD,
+                        Items.GOLDEN_SWORD,
+                        Items.DIAMOND_SWORD,
+                        Items.NETHERITE_SWORD
+                );
     }
 }

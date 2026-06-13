@@ -2,23 +2,23 @@ package io.github.naimjeg.obeliskdepths.client.screen;
 
 import io.github.naimjeg.obeliskdepths.ObeliskDepths;
 import io.github.naimjeg.obeliskdepths.menu.ObeliskTemperingMenu;
-import io.github.naimjeg.obeliskdepths.tempering.ObeliskTemperingPoolRegistry;
-import io.github.naimjeg.obeliskdepths.tempering.ObeliskTemperingPreviewResolver;
+import io.github.naimjeg.obeliskdepths.network.SelectTemperingDirectionPayload;
+import io.github.naimjeg.obeliskdepths.network.TemperingDirectionView;
 import io.github.naimjeg.obeliskdepths.tempering.TemperingAffixPreview;
-import io.github.naimjeg.obeliskdepths.tempering.TemperingDirection;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.ObjectSelectionList;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 
-import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 public class ObeliskTemperingScreen
         extends AbstractContainerScreen<ObeliskTemperingMenu> {
@@ -29,22 +29,27 @@ public class ObeliskTemperingScreen
             );
 
     private static final int DIRECTION_LIST_X = 90;
-    private static final int DIRECTION_LIST_Y = 15;
-    private static final int DIRECTION_LIST_WIDTH = 80;
-    private static final int DIRECTION_LIST_HEIGHT = 50;
-    private static final int AFFIX_LIST_X = 181;
-    private static final int AFFIX_LIST_Y = 8;
-    private static final int AFFIX_LIST_WIDTH = 70;
-    private static final int AFFIX_LIST_HEIGHT = 154;
+    private static final int DIRECTION_LIST_Y = 16;
+    private static final int DIRECTION_LIST_WIDTH = 66;
+    private static final int DIRECTION_LIST_HEIGHT = 44;
+    private static final int AFFIX_LIST_X = 182;
+    private static final int AFFIX_LIST_Y = 7;
+    private static final int AFFIX_LIST_WIDTH = 54;
+    private static final int AFFIX_LIST_HEIGHT = 151;
+
+    private static final int COLOR_TEXT_PRIMARY = 0xFFFFFFFF;
+    private static final int COLOR_TEXT_SECONDARY = 0xFFB0B0B0;
+    private static final int COLOR_ERROR = 0xFFA00000;
+    private static final int COLOR_HOVER = 0x553C6A74;
 
     private DirectionSelectionList directionList;
     private AffixPreviewList affixList;
     private ItemStack lastWeapon = ItemStack.EMPTY;
     private ItemStack lastTemplate = ItemStack.EMPTY;
     private ItemStack lastIngredient = ItemStack.EMPTY;
-    private TemperingDirection lastDirection = TemperingDirection.BALANCE;
+    private Identifier lastDirection;
     private boolean lastValidRecipe;
-    private int lastPoolHash;
+    private int lastDirectionStateVersion = -1;
 
     public ObeliskTemperingScreen(
             ObeliskTemperingMenu menu,
@@ -91,16 +96,17 @@ public class ObeliskTemperingScreen
         ItemStack ingredient = this.menu
                 .getSlot(ObeliskTemperingMenu.INGREDIENT_SLOT)
                 .getItem();
-        TemperingDirection direction = this.menu.selectedDirection();
+        Identifier direction = this.menu.selectedDirectionId().orElse(null);
         boolean validRecipe = this.menu.hasValidRecipe();
-        int poolHash = this.menu.currentPoolHash();
+        int directionStateVersion = this.menu.directionStateVersion();
+
         boolean changed = force
                 || !ItemStack.matches(weapon, this.lastWeapon)
                 || !ItemStack.matches(template, this.lastTemplate)
                 || !ItemStack.matches(ingredient, this.lastIngredient)
-                || direction != this.lastDirection
+                || !Objects.equals(direction, this.lastDirection)
                 || validRecipe != this.lastValidRecipe
-                || poolHash != this.lastPoolHash;
+                || directionStateVersion != this.lastDirectionStateVersion;
 
         if (!changed) {
             return;
@@ -111,45 +117,46 @@ public class ObeliskTemperingScreen
         this.lastIngredient = ingredient.copy();
         this.lastDirection = direction;
         this.lastValidRecipe = validRecipe;
-        this.lastPoolHash = poolHash;
+        this.lastDirectionStateVersion = directionStateVersion;
 
         if (this.directionList != null) {
-            this.directionList.setSelectedDirection(direction);
+            this.directionList.setDirections(
+                    this.menu.directionViews(),
+                    direction
+            );
         }
 
         if (this.affixList == null) {
             return;
         }
 
-        boolean previewAvailable = validRecipe
-                && ObeliskTemperingPoolRegistry.findPoolByPreviewHash(poolHash)
-                .isPresent();
-        List<TemperingAffixPreview> previews = List.of();
-
-        if (validRecipe && this.minecraft != null
-                && this.minecraft.level != null
-                && previewAvailable) {
-            previews = ObeliskTemperingPreviewResolver.resolveClientPreview(
-                    this.minecraft.level,
-                    this.menu.createRecipeInput(),
-                    poolHash
-            );
-        }
+        List<TemperingAffixPreview> previews =
+                validRecipe && direction != null
+                        ? this.menu.selectedDirectionPreviews()
+                        : List.of();
 
         this.affixList.setPreviews(
                 previews,
                 validRecipe,
-                previewAvailable
+                direction != null
         );
     }
 
-    private void selectDirection(TemperingDirection direction) {
-        if (this.minecraft != null && this.minecraft.gameMode != null) {
-            this.minecraft.gameMode.handleInventoryButtonClick(
-                    this.menu.containerId,
-                    direction.id()
-            );
+    private void selectDirection(Identifier directionId) {
+        if (this.minecraft == null) {
+            return;
         }
+
+        ClientPacketListener connection = this.minecraft.getConnection();
+
+        if (connection == null) {
+            return;
+        }
+
+        connection.send(new SelectTemperingDirectionPayload(
+                this.menu.containerId,
+                directionId
+        ));
     }
 
     @Override
@@ -180,13 +187,35 @@ public class ObeliskTemperingScreen
             int mouseX,
             int mouseY
     ) {
+        graphics.text(
+                this.font,
+                Component.translatable(
+                        "gui.obeliskdepths.tempering.directions"
+                ),
+                DIRECTION_LIST_X,
+                6,
+                0xFF404040,
+                false
+        );
+
+        graphics.text(
+                this.font,
+                Component.translatable(
+                        "gui.obeliskdepths.tempering.possible_affixes"
+                ),
+                AFFIX_LIST_X,
+                6,
+                0xFF404040,
+                false
+        );
+
         if (this.menu.hasRecipeError()) {
             graphics.text(
                     this.font,
                     Component.literal("!"),
                     ObeliskTemperingMenu.RESULT_SLOT_X + 21,
                     ObeliskTemperingMenu.RESULT_SLOT_Y + 4,
-                    0xA00000,
+                    COLOR_ERROR,
                     false
             );
         }
@@ -203,11 +232,6 @@ public class ObeliskTemperingScreen
         ) {
             super(minecraft, width, height, y, 12);
             this.updateSizeAndPosition(width, height, x, y);
-            this.replaceEntries(Arrays.stream(TemperingDirection.values())
-                    .map(direction -> new Entry(direction))
-                    .toList());
-            this.setSelectedDirection(ObeliskTemperingScreen.this.menu
-                    .selectedDirection());
         }
 
         @Override
@@ -215,9 +239,20 @@ public class ObeliskTemperingScreen
             return Math.max(16, this.getWidth() - 16);
         }
 
-        private void setSelectedDirection(TemperingDirection direction) {
+        private void setDirections(
+                List<TemperingDirectionView> directions,
+                Identifier selectedDirection
+        ) {
+            this.replaceEntries(directions
+                    .stream()
+                    .map(Entry::new)
+                    .toList());
+            this.setSelectedDirection(selectedDirection);
+        }
+
+        private void setSelectedDirection(Identifier direction) {
             for (Entry entry : this.children()) {
-                if (entry.direction == direction) {
+                if (entry.view.id().equals(direction)) {
                     this.setSelected(entry);
                     return;
                 }
@@ -226,10 +261,10 @@ public class ObeliskTemperingScreen
 
         private final class Entry
                 extends ObjectSelectionList.Entry<DirectionSelectionList.Entry> {
-            private final TemperingDirection direction;
+            private final TemperingDirectionView view;
 
-            private Entry(TemperingDirection direction) {
-                this.direction = direction;
+            private Entry(TemperingDirectionView view) {
+                this.view = view;
             }
 
             @Override
@@ -240,11 +275,7 @@ public class ObeliskTemperingScreen
                     boolean hovered,
                     float partialTick
             ) {
-                boolean available = ObeliskTemperingScreen.this.menu
-                        .isDirectionAvailable(this.direction);
-                int color = available ? 0xFFFFFF : 0x707070;
-
-                if (hovered && available) {
+                if (hovered) {
                     graphics.fill(
                             this.getX() + 1,
                             this.getY() + 1,
@@ -256,11 +287,11 @@ public class ObeliskTemperingScreen
 
                 graphics.text(
                         ObeliskTemperingScreen.this.font,
-                        this.direction.displayName(),
+                        this.view.displayName(),
                         this.getContentX(),
                         this.getContentYMiddle()
                                 - ObeliskTemperingScreen.this.font.lineHeight / 2,
-                        color,
+                        COLOR_TEXT_PRIMARY,
                         false
                 );
             }
@@ -270,11 +301,8 @@ public class ObeliskTemperingScreen
                     MouseButtonEvent event,
                     boolean doubleClick
             ) {
-                if (event.button() == 0
-                        && ObeliskTemperingScreen.this.menu
-                        .isDirectionAvailable(this.direction)) {
-                    DirectionSelectionList.this.setSelected(this);
-                    ObeliskTemperingScreen.this.selectDirection(this.direction);
+                if (event.button() == 0) {
+                    ObeliskTemperingScreen.this.selectDirection(this.view.id());
                     return true;
                 }
 
@@ -285,7 +313,7 @@ public class ObeliskTemperingScreen
             public Component getNarration() {
                 return Component.translatable(
                         "narrator.select",
-                        this.direction.displayName()
+                        this.view.displayName()
                 );
             }
         }
@@ -349,15 +377,9 @@ public class ObeliskTemperingScreen
         }
 
         private Entry previewEntry(TemperingAffixPreview preview) {
-            Component description = preview.description();
-
-            if (description == null) {
-                description = Component.empty();
-            }
-
             return new Entry(
                     preview.displayName(),
-                    description,
+                    preview.description(),
                     preview.weight(),
                     false
             );
@@ -405,7 +427,9 @@ public class ObeliskTemperingScreen
                         this.name,
                         this.getContentX(),
                         this.getContentY(),
-                        this.message ? 0xB0B0B0 : 0xFFFFFF,
+                        this.message
+                                ? COLOR_TEXT_SECONDARY
+                                : COLOR_TEXT_PRIMARY,
                         false
                 );
 
@@ -419,7 +443,7 @@ public class ObeliskTemperingScreen
                             detail,
                             this.getContentX(),
                             this.getContentY() + 10,
-                            0xB0B0B0,
+                            COLOR_TEXT_SECONDARY,
                             false
                     );
                 }

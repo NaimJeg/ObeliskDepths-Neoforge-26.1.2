@@ -159,11 +159,13 @@ tasks.withType(Test).configureEach {
 
 def mainMethodTests = [
         'io.github.naimjeg.obeliskdepths.tempering.TemperingTemplateDataTest',
-        'io.github.naimjeg.obeliskdepths.tempering.TemperingDirectionTest',
+        'io.github.naimjeg.obeliskdepths.tempering.ObeliskTemperingDirectionRegistryTest',
+        'io.github.naimjeg.obeliskdepths.tempering.ObeliskTemperingDirectionPoolResolverTest',
         'io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonConnectorShapeTypeTest',
         'io.github.naimjeg.obeliskdepths.dungeon.site.ResolvedDungeonSiteTest',
         'io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSiteProjectionSourceTest',
         'io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSiteProjectionCacheGuardTest',
+        'io.github.naimjeg.obeliskdepths.dungeon.runtime.DungeonLocatorConfigurationTest',
         'io.github.naimjeg.obeliskdepths.dungeon.runtime.DungeonRuntimeBoundaryTest',
         'io.github.naimjeg.obeliskdepths.dungeon.session.DungeonKillProgressTest',
         'io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphGeneratorTest',

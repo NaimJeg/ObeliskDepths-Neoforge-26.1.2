@@ -1,7 +1,6 @@
 package io.github.naimjeg.obeliskdepths.registry;
 
 import io.github.naimjeg.obeliskdepths.ObeliskDepths;
-import io.github.naimjeg.obeliskdepths.tempering.PendingObeliskTemperRoll;
 import io.github.naimjeg.obeliskdepths.tempering.TemperingTemplateData;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
@@ -15,22 +14,6 @@ public final class ModDataComponents {
             DeferredRegister.create(
                     Registries.DATA_COMPONENT_TYPE,
                     ObeliskDepths.MOD_ID
-            );
-
-    public static final DeferredHolder<
-            DataComponentType<?>,
-            DataComponentType<PendingObeliskTemperRoll>
-            > PENDING_TEMPER_ROLL =
-            COMPONENTS.register(
-                    "pending_temper_roll",
-                    () -> DataComponentType
-                            .<PendingObeliskTemperRoll>builder()
-                            .persistent(PendingObeliskTemperRoll.CODEC)
-                            .networkSynchronized(
-                                    PendingObeliskTemperRoll.STREAM_CODEC
-                            )
-                            .cacheEncoding()
-                            .build()
             );
 
     public static final DeferredHolder<

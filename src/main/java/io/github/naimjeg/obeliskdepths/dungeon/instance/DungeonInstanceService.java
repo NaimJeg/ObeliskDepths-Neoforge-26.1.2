@@ -1,12 +1,7 @@
 package io.github.naimjeg.obeliskdepths.dungeon.instance;
 
 import io.github.naimjeg.obeliskdepths.dungeon.id.DungeonInstanceId;
-import io.github.naimjeg.obeliskdepths.dungeon.site.DungeonGeneratedRoom;
-import io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSite;
-import io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSiteProjectionCache;
-import io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSiteUsageStatus;
-import io.github.naimjeg.obeliskdepths.dungeon.site.ResolvedDungeonSite;
-import io.github.naimjeg.obeliskdepths.dungeon.site.WorldgenDungeonSiteLocator;
+import io.github.naimjeg.obeliskdepths.dungeon.site.*;
 import io.github.naimjeg.obeliskdepths.dungeon.state.DungeonManagerSavedData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -15,19 +10,20 @@ import java.util.Optional;
 import java.util.UUID;
 
 /*
- * ARCHITECTURAL INVARIANT — NO RUNTIME DUNGEON GENERATION
+ * ARCHITECTURAL INVARIANT — VANILLA WORLDGEN REMAINS AUTHORITATIVE
  *
- * Physical dungeon geometry is produced exclusively by Minecraft's
+ * Physical dungeon geometry must be produced exclusively by Minecraft's
  * structure/chunk world-generation pipeline.
  *
- * Runtime code may discover, validate, reserve, load, and enter an already
- * generated dungeon site. Runtime code must never create a physical site plan,
- * place or repair dungeon blocks, materialize structure pieces, or promote a
- * planned prototype to authoritative generated-site metadata.
+ * Runtime allocation may request bounded vanilla chunk generation for a valid
+ * structure-placement candidate when no generated site is available.
  *
- * Loading an already-generated chunk is allowed. Writing dungeon geometry
- * because of portal use, reservation, teleportation, session creation, room
- * entry, or chunk loading is strictly forbidden.
+ * Runtime code must never manually place dungeon blocks, fabricate a
+ * StructureStart, fabricate generated room metadata, or promote prototype
+ * planning data into an authoritative DungeonSite.
+ *
+ * After generation, runtime metadata must always be read back from the actual
+ * vanilla StructureStart and serialized ObeliskDungeonPiece instances.
  */
 public final class DungeonInstanceService {
     private DungeonInstanceService() {
@@ -49,10 +45,10 @@ public final class DungeonInstanceService {
         DungeonManagerSavedData data = DungeonManagerSavedData.get(dungeonLevel);
 
         Optional<ResolvedDungeonSite> resolved =
-                WorldgenDungeonSiteLocator.findNearestReservableSite(
+                WorldgenDungeonSiteProvisioner.findOrGenerateReservableSite(
                         dungeonLevel,
                         origin,
-                        data::isSiteUnreached
+                        data
                 );
 
         if (resolved.isEmpty()) {

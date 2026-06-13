@@ -1,6 +1,7 @@
 package io.github.naimjeg.obeliskdepths.worldgen.structure.layout;
 
 import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphEdgeKind;
+import java.util.List;
 
 public record DungeonLayoutEdge(
         String id,
@@ -9,7 +10,8 @@ public record DungeonLayoutEdge(
         DungeonConnectorSide fromSide,
         DungeonConnectorSide toSide,
         int widthCells,
-        DungeonGraphEdgeKind kind
+        DungeonGraphEdgeKind kind,
+        List<DungeonCellPos> plannedPath
 ) {
     public DungeonLayoutEdge {
         if (id == null || id.isBlank()) {
@@ -40,9 +42,35 @@ public record DungeonLayoutEdge(
             throw new IllegalArgumentException("Layout edge kind must be present: " + id);
         }
 
+        plannedPath = plannedPath == null ? List.of() : List.copyOf(plannedPath);
+        validatePlannedPath(id, plannedPath);
     }
 
     public boolean directOppositeConnection() {
         return this.fromSide.opposite() == this.toSide;
+    }
+
+    private static void validatePlannedPath(
+            String edgeId,
+            List<DungeonCellPos> path
+    ) {
+        for (int index = 1; index < path.size(); index++) {
+            DungeonCellPos previous = path.get(index - 1);
+            DungeonCellPos current = path.get(index);
+            int distance = Math.abs(previous.x() - current.x())
+                    + Math.abs(previous.y() - current.y())
+                    + Math.abs(previous.z() - current.z());
+
+            if (distance != 1) {
+                throw new IllegalArgumentException(
+                        "Layout edge planned path is not contiguous: edge="
+                                + edgeId
+                                + " previous="
+                                + previous
+                                + " current="
+                                + current
+                );
+            }
+        }
     }
 }

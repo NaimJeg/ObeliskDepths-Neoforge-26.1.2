@@ -1,18 +1,25 @@
 package io.github.naimjeg.obeliskdepths.menu;
 
+import io.github.naimjeg.obeliskdepths.ObeliskDepths;
+import io.github.naimjeg.obeliskdepths.network.ClientboundTemperingDirectionStatePayload;
+import io.github.naimjeg.obeliskdepths.network.TemperingDirectionView;
 import io.github.naimjeg.obeliskdepths.recipe.ObeliskTemperingRecipe;
 import io.github.naimjeg.obeliskdepths.recipe.ObeliskTemperingRecipeInput;
+import io.github.naimjeg.obeliskdepths.recipe.ObeliskTemperingRecipeResolver;
 import io.github.naimjeg.obeliskdepths.registry.ModBlocks;
-import io.github.naimjeg.obeliskdepths.registry.ModDataComponents;
 import io.github.naimjeg.obeliskdepths.registry.ModItems;
 import io.github.naimjeg.obeliskdepths.registry.ModMenuTypes;
 import io.github.naimjeg.obeliskdepths.registry.ModRecipeTypes;
-import io.github.naimjeg.obeliskdepths.tempering.ObeliskTemperingPoolRegistry;
+import io.github.naimjeg.obeliskdepths.tempering.AggregatedTemperingDirection;
+import io.github.naimjeg.obeliskdepths.tempering.ObeliskTemperingDirectionPoolResolver;
+import io.github.naimjeg.obeliskdepths.tempering.ObeliskTemperingPreviewResolver;
 import io.github.naimjeg.obeliskdepths.tempering.ObeliskTemperingRoller;
-import io.github.naimjeg.obeliskdepths.tempering.TemperingDirection;
+import io.github.naimjeg.obeliskdepths.tempering.TemperingAffixPreview;
 import io.github.naimjeg.obeliskdepths.tempering.TemperingTemplateData;
 import io.github.naimjeg.obeliskdepths.tempering.TemperingTemplateItems;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Inventory;
@@ -24,9 +31,16 @@ import net.minecraft.world.inventory.ResultContainer;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.RecipeHolder;
+import net.minecraft.world.item.crafting.RecipeManager;
 import net.minecraft.world.level.Level;
+import net.neoforged.neoforge.network.PacketDistributor;
+import org.jspecify.annotations.Nullable;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 public class ObeliskTemperingMenu extends AbstractContainerMenu {
@@ -35,32 +49,42 @@ public class ObeliskTemperingMenu extends AbstractContainerMenu {
     public static final int INGREDIENT_SLOT = 2;
     public static final int RESULT_SLOT = 3;
 
-    public static final int WEAPON_SLOT_X = 18;
-    public static final int WEAPON_SLOT_Y = 22;
-    public static final int TEMPLATE_SLOT_X = 43;
-    public static final int TEMPLATE_SLOT_Y = 22;
+    public static final int WEAPON_SLOT_X = 20;
+    public static final int WEAPON_SLOT_Y = 25;
+    public static final int TEMPLATE_SLOT_X = 40;
+    public static final int TEMPLATE_SLOT_Y = 25;
     public static final int INGREDIENT_SLOT_X = 30;
-    public static final int INGREDIENT_SLOT_Y = 48;
-    // TODO: Replace this temporary output slot with the final explicit apply control.
+    public static final int INGREDIENT_SLOT_Y = 45;
     public static final int RESULT_SLOT_X = 152;
-    public static final int RESULT_SLOT_Y = 48;
+    public static final int RESULT_SLOT_Y = 64;
 
     public static final int AFFIX_BUTTON_OFFSET = 1000;
 
-    private static final int PLAYER_INVENTORY_START = 4;
-    private static final int PLAYER_INVENTORY_END = 31;
-    private static final int PLAYER_HOTBAR_END = 40;
+    private static final int PLAYER_INVENTORY_START = RESULT_SLOT + 1;
+    private static final int PLAYER_INVENTORY_END =
+            PLAYER_INVENTORY_START + 27;
+    private static final int PLAYER_HOTBAR_END =
+            PLAYER_INVENTORY_END + 9;
 
     private final ContainerLevelAccess access;
     private final Level level;
+    private final Player owner;
     private final SimpleContainer inputSlots;
     private final ResultContainer resultSlots = new ResultContainer();
 
-    private final DataSlot selectedDirection = DataSlot.standalone();
     private final DataSlot hasRecipeError = DataSlot.standalone();
     private final DataSlot hasValidRecipe = DataSlot.standalone();
-    private final DataSlot currentPoolHash = DataSlot.standalone();
-    private final DataSlot availableDirectionMask = DataSlot.standalone();
+
+    private ResolvedTemperingState resolvedState =
+            ResolvedTemperingState.EMPTY;
+
+    private List<TemperingDirectionView> clientDirectionViews = List.of();
+    private List<TemperingAffixPreview> clientSelectedPreviews = List.of();
+    private int clientDirectionStateVersion;
+
+    private @Nullable Identifier selectedDirectionId;
+    private @Nullable ClientTemperingState lastSyncedClientState;
+    private boolean directionSyncDirty = true;
 
     public ObeliskTemperingMenu(int containerId, Inventory inventory) {
         this(containerId, inventory, ContainerLevelAccess.NULL);
@@ -75,6 +99,7 @@ public class ObeliskTemperingMenu extends AbstractContainerMenu {
 
         this.access = access;
         this.level = inventory.player.level();
+        this.owner = inventory.player;
         this.inputSlots = new SimpleContainer(3) {
             @Override
             public void setChanged() {
@@ -88,13 +113,32 @@ public class ObeliskTemperingMenu extends AbstractContainerMenu {
                 WEAPON_SLOT,
                 WEAPON_SLOT_X,
                 WEAPON_SLOT_Y
-        ));
+        ) {
+            @Override
+            public boolean mayPlace(ItemStack stack) {
+                return ObeliskTemperingMenu.this
+                        .isPotentialWeaponStack(stack);
+            }
+
+            @Override
+            public int getMaxStackSize() {
+                return 1;
+            }
+        });
+
         this.addSlot(new Slot(
                 this.inputSlots,
                 TEMPLATE_SLOT,
                 TEMPLATE_SLOT_X,
                 TEMPLATE_SLOT_Y
-        ));
+        ) {
+            @Override
+            public boolean mayPlace(ItemStack stack) {
+                return TemperingTemplateItems
+                        .isTemperingTemplate(stack);
+            }
+        });
+
         this.addSlot(new Slot(
                 this.inputSlots,
                 INGREDIENT_SLOT,
@@ -108,82 +152,77 @@ public class ObeliskTemperingMenu extends AbstractContainerMenu {
                 RESULT_SLOT_Y
         ));
 
-        this.addStandardInventorySlots(inventory, 7, 84);
+        this.addStandardInventorySlots(inventory, 8, 84);
 
-        this.addDataSlot(this.selectedDirection)
-                .set(TemperingDirection.BALANCE.id());
         this.addDataSlot(this.hasRecipeError).set(0);
         this.addDataSlot(this.hasValidRecipe).set(0);
-        this.addDataSlot(this.currentPoolHash).set(0);
-        this.addDataSlot(this.availableDirectionMask).set(allDirectionMask());
+
+        if (!this.level.isClientSide()) {
+            this.rebuildResolvedState();
+            this.updateResultFromCachedState();
+        }
     }
 
     public ObeliskTemperingRecipeInput createRecipeInput() {
-        return this.createRecipeInput(this.selectedDirection());
-    }
-
-    private ObeliskTemperingRecipeInput createRecipeInput(
-            TemperingDirection direction
-    ) {
         return new ObeliskTemperingRecipeInput(
                 this.inputSlots.getItem(WEAPON_SLOT),
                 this.inputSlots.getItem(TEMPLATE_SLOT),
-                this.inputSlots.getItem(INGREDIENT_SLOT),
-                direction
-        );
-    }
-
-    public Optional<RecipeHolder<ObeliskTemperingRecipe>> findCurrentRecipe() {
-        if (!(this.level instanceof ServerLevel serverLevel)) {
-            return Optional.empty();
-        }
-
-        return serverLevel.recipeAccess().getRecipeFor(
-                ModRecipeTypes.OBELISK_TEMPERING.get(),
-                this.createRecipeInput(),
-                serverLevel
+                this.inputSlots.getItem(INGREDIENT_SLOT)
         );
     }
 
     public void createResult() {
-        if (!(this.level instanceof ServerLevel serverLevel)) {
+        this.updateResultFromCachedState();
+        this.broadcastChanges();
+    }
+
+    private void updateResultFromCachedState() {
+        if (this.level.isClientSide()) {
             return;
         }
 
-        this.updateAvailableDirections(serverLevel);
+        Identifier selected = this.selectedDirectionId;
 
-        Optional<RecipeHolder<ObeliskTemperingRecipe>> foundRecipe =
-                this.findCurrentRecipe();
+        if (selected == null) {
+            this.clearResult();
+            this.updateRecipeErrorState();
+            return;
+        }
 
-        if (foundRecipe.isPresent()) {
-            RecipeHolder<ObeliskTemperingRecipe> recipe = foundRecipe.get();
-            ItemStack result = recipe.value().assemble(this.createRecipeInput());
+        AggregatedTemperingDirection direction =
+                this.resolvedState.directions().get(selected);
 
-            if (!result.isEmpty()) {
-                this.resultSlots.setRecipeUsed(recipe);
-                this.resultSlots.setItem(0, result);
-                this.hasValidRecipe.set(1);
-                this.currentPoolHash.set(
-                        ObeliskTemperingPoolRegistry.previewHash(
-                                recipe.value().pool()
-                        )
+        if (direction == null || direction.entries().isEmpty()) {
+            this.clearResult();
+            this.updateRecipeErrorState();
+            return;
+        }
+
+        ObeliskTemperingRoller.TemperingAvailability availability =
+                ObeliskTemperingRoller.checkAvailability(
+                        this.inputSlots.getItem(WEAPON_SLOT),
+                        selected,
+                        this.resolvedState.matchingRecipes()
                 );
-            } else {
-                this.clearResult();
-            }
+
+        if (availability.available()) {
+            ItemStack result = this.inputSlots
+                    .getItem(WEAPON_SLOT)
+                    .copyWithCount(1);
+            this.resultSlots.setRecipeUsed(null);
+            this.resultSlots.setItem(0, result);
+            this.hasValidRecipe.set(1);
         } else {
             this.clearResult();
         }
 
         this.updateRecipeErrorState();
-        this.broadcastChanges();
     }
 
     private void clearResult() {
         this.resultSlots.setRecipeUsed(null);
         this.resultSlots.setItem(0, ItemStack.EMPTY);
         this.hasValidRecipe.set(0);
-        this.currentPoolHash.set(0);
     }
 
     private void updateRecipeErrorState() {
@@ -196,48 +235,184 @@ public class ObeliskTemperingMenu extends AbstractContainerMenu {
         );
     }
 
-    private void updateAvailableDirections(ServerLevel serverLevel) {
-        int mask = 0;
-
-        for (TemperingDirection direction : TemperingDirection.values()) {
-            if (serverLevel.recipeAccess().getRecipeFor(
-                    ModRecipeTypes.OBELISK_TEMPERING.get(),
-                    this.createRecipeInput(direction),
-                    serverLevel
-            ).isPresent()) {
-                mask |= directionMask(direction);
-            }
+    private void rebuildResolvedState() {
+        if (this.level.isClientSide()) {
+            return;
         }
 
-        boolean hasMeaningfulInputs =
-                !this.inputSlots.getItem(WEAPON_SLOT).isEmpty()
-                        && !this.inputSlots.getItem(TEMPLATE_SLOT).isEmpty();
-        this.availableDirectionMask.set(
-                mask == 0 && !hasMeaningfulInputs ? allDirectionMask() : mask
+        if (!(this.level.recipeAccess() instanceof RecipeManager recipeManager)) {
+            this.replaceResolvedState(ResolvedTemperingState.EMPTY);
+            return;
+        }
+
+        List<RecipeHolder<?>> loadedTemperingRecipes =
+                recipeManager.getRecipes()
+                        .stream()
+                        .filter(holder ->
+                                holder.value().getType()
+                                        == ModRecipeTypes.OBELISK_TEMPERING.get()
+                        )
+                        .toList();
+
+        ObeliskDepths.LOGGER.info(
+                "Loaded tempering recipe count={}, ids={}",
+                loadedTemperingRecipes.size(),
+                loadedTemperingRecipes.stream()
+                        .map(holder ->
+                                holder.id().identifier().toString()
+                        )
+                        .sorted()
+                        .toList()
         );
+
+        ObeliskTemperingRecipeInput debugInput =
+                this.createRecipeInput();
+
+        for (RecipeHolder<?> holder : loadedTemperingRecipes) {
+            ObeliskTemperingRecipe recipe =
+                    (ObeliskTemperingRecipe) holder.value();
+
+            TemperingTemplateData templateData =
+                    TemperingTemplateItems.getOrDefault(
+                            debugInput.template()
+                    );
+
+            boolean weaponMatches =
+                    recipe.weapon().test(debugInput.weapon());
+
+            boolean templateMatches =
+                    recipe.template().test(debugInput.template());
+
+            boolean ingredientMatches =
+                    recipe.ingredient()
+                            .map(ingredient ->
+                                    ingredient.test(
+                                            debugInput.ingredient()
+                                    )
+                            )
+                            .orElse(debugInput.ingredient().isEmpty());
+
+            boolean tierMatches =
+                    templateData.tier() >= recipe.minTier()
+                            && templateData.tier() <= recipe.maxTier();
+
+            boolean weaponCanTemper =
+                    ObeliskTemperingRoller.canTemper(
+                            debugInput.weapon(),
+                            recipe.replaceExisting()
+                    );
+
+            ObeliskDepths.LOGGER.info(
+                    "Tempering candidate {}: weaponMatch={}, "
+                            + "templateMatch={}, ingredientMatch={}, "
+                            + "templateItem={}, tier={}, tierMatch={}, "
+                            + "canTemper={}",
+                    holder.id().identifier(),
+                    weaponMatches,
+                    templateMatches,
+                    ingredientMatches,
+                    TemperingTemplateItems.isTemperingTemplate(
+                            debugInput.template()
+                    ),
+                    templateData.tier(),
+                    tierMatches,
+                    weaponCanTemper
+            );
+        }
+
+        List<RecipeHolder<ObeliskTemperingRecipe>> matchingRecipes =
+                ObeliskTemperingRecipeResolver.findBaseMatches(
+                        recipeManager,
+                        this.createRecipeInput(),
+                        this.level
+                );
+        Map<Identifier, AggregatedTemperingDirection> directions =
+                ObeliskTemperingDirectionPoolResolver.resolve(matchingRecipes);
+
+        ObeliskDepths.LOGGER.info(
+                "Tempering resolve: weapon={}, template={}, ingredient={}, "
+                        + "templateItem={}, templateData={}, matches={}, directions={}",
+                this.inputSlots.getItem(WEAPON_SLOT),
+                this.inputSlots.getItem(TEMPLATE_SLOT),
+                this.inputSlots.getItem(INGREDIENT_SLOT),
+                TemperingTemplateItems.isTemperingTemplate(
+                        this.inputSlots.getItem(TEMPLATE_SLOT)
+                ),
+                TemperingTemplateItems.hasTemplateData(
+                        this.inputSlots.getItem(TEMPLATE_SLOT)
+                ),
+                matchingRecipes.stream()
+                        .map(holder -> holder.id().identifier().toString())
+                        .toList(),
+                directions.keySet()
+        );
+
+        this.replaceResolvedState(new ResolvedTemperingState(
+                matchingRecipes,
+                directions,
+                List.copyOf(directions.keySet())
+        ));
+    }
+
+    private void replaceResolvedState(ResolvedTemperingState state) {
+        if (this.level.isClientSide()) {
+            return;
+        }
+
+        List<Identifier> oldAvailable =
+                this.resolvedState.orderedDirectionIds();
+        Identifier oldSelected = this.selectedDirectionId;
+
+        this.resolvedState = state;
+
+        if (!state.directions().containsKey(this.selectedDirectionId)) {
+            this.selectedDirectionId = state.orderedDirectionIds()
+                    .stream()
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        if (!Objects.equals(oldSelected, this.selectedDirectionId)
+                || !oldAvailable.equals(state.orderedDirectionIds())) {
+            this.markDirectionSyncDirty();
+        }
     }
 
     @Override
     public void slotsChanged(Container container) {
         super.slotsChanged(container);
 
-        if (container == this.inputSlots) {
+        if (container == this.inputSlots && !this.level.isClientSide()) {
+            this.rebuildResolvedState();
             this.createResult();
         }
     }
 
     @Override
     public boolean clickMenuButton(Player player, int buttonId) {
-        if (buttonId >= AFFIX_BUTTON_OFFSET) {
-            // TODO: Support explicit affix targeting after direction/ingredient relation is designed.
+        return false;
+    }
+
+    public boolean selectDirectionFromClient(Identifier directionId) {
+        if (directionId == null) {
             return false;
         }
 
-        TemperingDirection direction = TemperingDirection.byId(buttonId);
+        if (!this.resolvedState.directions().containsKey(directionId)) {
+            this.markDirectionSyncDirty();
+            this.syncDirectionState();
+            return false;
+        }
 
-        this.selectedDirection.set(direction.id());
+        if (Objects.equals(this.selectedDirectionId, directionId)) {
+            this.markDirectionSyncDirty();
+            this.syncDirectionState();
+            return true;
+        }
+
+        this.selectedDirectionId = directionId;
+        this.markDirectionSyncDirty();
         this.createResult();
-
         return true;
     }
 
@@ -246,49 +421,65 @@ public class ObeliskTemperingMenu extends AbstractContainerMenu {
             return ItemStack.EMPTY;
         }
 
-        ObeliskTemperingRecipeInput input = this.createRecipeInput();
-        Optional<RecipeHolder<ObeliskTemperingRecipe>> foundRecipe =
-                serverLevel.recipeAccess().getRecipeFor(
-                        ModRecipeTypes.OBELISK_TEMPERING.get(),
-                        input,
-                        serverLevel
+        Identifier requestedDirection = this.selectedDirectionId;
+
+        if (requestedDirection == null) {
+            return ItemStack.EMPTY;
+        }
+
+        /*
+         * Re-read current inputs and recipes. This protects against stale state,
+         * including a datapack reload while the menu is open.
+         */
+        this.rebuildResolvedState();
+
+        if (!this.resolvedState.directions()
+                .containsKey(requestedDirection)) {
+            return ItemStack.EMPTY;
+        }
+
+        /*
+         * rebuildResolvedState may alter the selected direction. Preserve the
+         * direction the player actually requested.
+         */
+        this.selectedDirectionId = requestedDirection;
+
+        ObeliskTemperingRecipeInput input =
+                this.createRecipeInput();
+
+        if (!TemperingTemplateItems
+                .isTemperingTemplate(input.template())) {
+            return ItemStack.EMPTY;
+        }
+
+        ObeliskTemperingRoller.TemperingAvailability availability =
+                ObeliskTemperingRoller.checkAvailability(
+                        input.weapon(),
+                        requestedDirection,
+                        this.resolvedState.matchingRecipes()
                 );
 
-        if (foundRecipe.isEmpty()) {
-            return ItemStack.EMPTY;
-        }
-
-        return this.createFinalResult(
-                player,
-                foundRecipe.get().value(),
-                input
-        );
-    }
-
-    private ItemStack createFinalResult(
-            Player player,
-            ObeliskTemperingRecipe recipe,
-            ObeliskTemperingRecipeInput input
-    ) {
-        if (!(this.level instanceof ServerLevel serverLevel)) {
-            return ItemStack.EMPTY;
-        }
-
-        if (!TemperingTemplateItems.hasTemplateData(input.template())) {
+        if (!availability.available()) {
             return ItemStack.EMPTY;
         }
 
         TemperingTemplateData templateData =
-                TemperingTemplateItems.getOrDefault(input.template());
-        int rolls = recipe.computeRolls(templateData, serverLevel.getRandom());
-        ItemStack result = recipe.assembleWithRolls(input, rolls);
+                TemperingTemplateItems.getOrDefault(
+                        input.template()
+                );
 
-        if (result.isEmpty()) {
-            return ItemStack.EMPTY;
-        }
+        ObeliskTemperingRoller.TemperingResult result =
+                ObeliskTemperingRoller.temper(
+                        input.weapon(),
+                        templateData,
+                        requestedDirection,
+                        this.resolvedState.matchingRecipes(),
+                        serverLevel.getRandom()
+                );
 
-        ObeliskTemperingRoller.resolvePendingRoll(result);
-        return result;
+        return result.success()
+                ? result.result()
+                : ItemStack.EMPTY;
     }
 
     private void onTake(Player player, ItemStack carried) {
@@ -302,7 +493,7 @@ public class ObeliskTemperingMenu extends AbstractContainerMenu {
             return;
         }
 
-        this.consumeInputsAndAward(player, carried);
+        this.consumeInputs(player, carried);
     }
 
     private boolean copyFinalResultIntoTakenStack(
@@ -319,13 +510,10 @@ public class ObeliskTemperingMenu extends AbstractContainerMenu {
 
         carried.setCount(finalResult.getCount());
         carried.applyComponents(finalResult.getComponentsPatch());
-        carried.remove(ModDataComponents.PENDING_TEMPER_ROLL.get());
         return true;
     }
 
-    private void consumeInputsAndAward(Player player, ItemStack crafted) {
-        this.resultSlots.awardUsedRecipes(player, this.getRelevantItems());
-
+    private void consumeInputs(Player player, ItemStack crafted) {
         if (!crafted.isEmpty()) {
             crafted.onCraftedBy(player, crafted.getCount());
         }
@@ -337,17 +525,10 @@ public class ObeliskTemperingMenu extends AbstractContainerMenu {
             this.shrinkStackInSlot(INGREDIENT_SLOT);
         }
 
+        this.rebuildResolvedState();
         this.resultSlots.setItem(0, ItemStack.EMPTY);
         this.access.execute((level, pos) -> level.levelEvent(1044, pos, 0));
         this.createResult();
-    }
-
-    private List<ItemStack> getRelevantItems() {
-        return List.of(
-                this.inputSlots.getItem(WEAPON_SLOT).copy(),
-                this.inputSlots.getItem(TEMPLATE_SLOT).copy(),
-                this.inputSlots.getItem(INGREDIENT_SLOT).copy()
-        );
     }
 
     private void shrinkStackInSlot(int slot) {
@@ -390,7 +571,7 @@ public class ObeliskTemperingMenu extends AbstractContainerMenu {
             }
 
             slot.setByPlayer(ItemStack.EMPTY);
-            this.consumeInputsAndAward(player, finalResult);
+            this.consumeInputs(player, finalResult);
             return finalResult;
         }
 
@@ -467,9 +648,7 @@ public class ObeliskTemperingMenu extends AbstractContainerMenu {
     }
 
     private boolean isTemplateStack(ItemStack stack) {
-        return !stack.isEmpty()
-                && (stack.getItem() == ModItems.TEMPERING_SMITHING_TEMPLATE.get()
-                || TemperingTemplateItems.hasTemplateData(stack));
+        return TemperingTemplateItems.isTemperingTemplate(stack);
     }
 
     private boolean isPotentialWeaponStack(ItemStack stack) {
@@ -497,8 +676,36 @@ public class ObeliskTemperingMenu extends AbstractContainerMenu {
         }
     }
 
-    public TemperingDirection selectedDirection() {
-        return TemperingDirection.byId(this.selectedDirection.get());
+    @Override
+    public void broadcastChanges() {
+        super.broadcastChanges();
+        this.syncDirectionState();
+    }
+
+    @Override
+    public void sendAllDataToRemote() {
+        super.sendAllDataToRemote();
+        this.markDirectionSyncDirty();
+        this.syncDirectionState();
+    }
+
+    public Optional<Identifier> selectedDirectionId() {
+        return Optional.ofNullable(this.selectedDirectionId);
+    }
+
+    public Optional<AggregatedTemperingDirection> selectedDirection() {
+        if (this.level.isClientSide()) {
+            return Optional.empty();
+        }
+
+        Identifier directionId = this.selectedDirectionId;
+
+        if (directionId == null) {
+            return Optional.empty();
+        }
+
+        return Optional.ofNullable(this.resolvedState.directions()
+                .get(directionId));
     }
 
     public boolean hasRecipeError() {
@@ -509,26 +716,192 @@ public class ObeliskTemperingMenu extends AbstractContainerMenu {
         return this.hasValidRecipe.get() > 0;
     }
 
-    public int currentPoolHash() {
-        return this.currentPoolHash.get();
-    }
-
-    public boolean isDirectionAvailable(TemperingDirection direction) {
-        return (this.availableDirectionMask.get() & directionMask(direction)) != 0;
-    }
-
-    private static int directionMask(TemperingDirection direction) {
-        return 1 << direction.id();
-    }
-
-    private static int allDirectionMask() {
-        int mask = 0;
-
-        for (TemperingDirection direction : TemperingDirection.values()) {
-            mask |= directionMask(direction);
+    public boolean isDirectionAvailable(Identifier directionId) {
+        if (directionId == null) {
+            return false;
         }
 
-        return mask;
+        if (this.level.isClientSide()) {
+            return this.clientDirectionViews
+                    .stream()
+                    .anyMatch(view -> view.id().equals(directionId));
+        }
+
+        return this.resolvedState.directions().containsKey(directionId);
+    }
+
+    public List<Identifier> availableDirectionIds() {
+        if (!this.level.isClientSide()) {
+            return this.resolvedState.orderedDirectionIds();
+        }
+
+        return this.clientDirectionViews
+                .stream()
+                .map(TemperingDirectionView::id)
+                .toList();
+    }
+
+    public List<TemperingDirectionView> directionViews() {
+        return this.level.isClientSide()
+                ? this.clientDirectionViews
+                : this.buildDirectionViews();
+    }
+
+    public List<TemperingAffixPreview> selectedDirectionPreviews() {
+        return this.level.isClientSide()
+                ? this.clientSelectedPreviews
+                : this.buildSelectedPreviews();
+    }
+
+    public int directionStateVersion() {
+        return this.clientDirectionStateVersion;
+    }
+
+    public void applyDirectionStateFromServer(
+            @Nullable Identifier selectedDirectionId,
+            List<TemperingDirectionView> directions,
+            List<TemperingAffixPreview> selectedPreviews
+    ) {
+        if (!this.level.isClientSide()) {
+            return;
+        }
+
+        List<TemperingDirectionView> copiedDirections =
+                directions == null ? List.of() : List.copyOf(directions);
+        boolean selectedIsAvailable = selectedDirectionId != null
+                && copiedDirections.stream()
+                .anyMatch(view -> view.id().equals(selectedDirectionId));
+
+        Identifier normalizedSelected =
+                selectedIsAvailable ? selectedDirectionId : null;
+        List<TemperingAffixPreview> copiedPreviews =
+                normalizedSelected == null || selectedPreviews == null
+                        ? List.of()
+                        : List.copyOf(selectedPreviews);
+
+        boolean changed = !Objects.equals(
+                this.selectedDirectionId,
+                normalizedSelected
+        ) || !this.clientDirectionViews.equals(copiedDirections)
+                || !this.clientSelectedPreviews.equals(copiedPreviews);
+
+        this.selectedDirectionId = normalizedSelected;
+        this.clientDirectionViews = copiedDirections;
+        this.clientSelectedPreviews = copiedPreviews;
+
+        if (changed) {
+            this.clientDirectionStateVersion++;
+        }
+    }
+
+    private List<TemperingDirectionView> buildDirectionViews() {
+        return this.resolvedState.orderedDirectionIds()
+                .stream()
+                .map(this.resolvedState.directions()::get)
+                .filter(Objects::nonNull)
+                .map(direction -> new TemperingDirectionView(
+                        direction.directionId(),
+                        direction.definition().displayName(),
+                        direction.definition().description()
+                ))
+                .toList();
+    }
+
+    private List<TemperingAffixPreview> buildSelectedPreviews() {
+        Identifier selected = this.selectedDirectionId;
+
+        if (selected == null) {
+            return List.of();
+        }
+
+        AggregatedTemperingDirection direction =
+                this.resolvedState.directions().get(selected);
+
+        if (direction == null) {
+            return List.of();
+        }
+
+        return ObeliskTemperingPreviewResolver.resolveDirectionPreview(
+                direction
+        );
+    }
+
+    private ClientTemperingState buildClientState() {
+        return new ClientTemperingState(
+                Optional.ofNullable(this.selectedDirectionId),
+                this.buildDirectionViews(),
+                this.buildSelectedPreviews()
+        );
+    }
+
+    private void markDirectionSyncDirty() {
+        this.directionSyncDirty = true;
+    }
+
+    private void syncDirectionState() {
+        if (this.level.isClientSide()
+                || !(this.owner instanceof ServerPlayer serverPlayer)
+                || serverPlayer.containerMenu != this) {
+            return;
+        }
+
+        ClientTemperingState state = this.buildClientState();
+
+        if (!this.directionSyncDirty
+                && Objects.equals(this.lastSyncedClientState, state)) {
+            return;
+        }
+
+        PacketDistributor.sendToPlayer(
+                serverPlayer,
+                new ClientboundTemperingDirectionStatePayload(
+                        this.containerId,
+                        state.selectedDirectionId(),
+                        state.directions(),
+                        state.selectedPreviews()
+                )
+        );
+        this.lastSyncedClientState = state;
+        this.directionSyncDirty = false;
+    }
+
+    private record ClientTemperingState(
+            Optional<Identifier> selectedDirectionId,
+            List<TemperingDirectionView> directions,
+            List<TemperingAffixPreview> selectedPreviews
+    ) {
+        private ClientTemperingState {
+            selectedDirectionId = selectedDirectionId == null
+                    ? Optional.empty()
+                    : selectedDirectionId;
+            directions = directions == null
+                    ? List.of()
+                    : List.copyOf(directions);
+            selectedPreviews = selectedPreviews == null
+                    ? List.of()
+                    : List.copyOf(selectedPreviews);
+        }
+    }
+
+    private record ResolvedTemperingState(
+            List<RecipeHolder<ObeliskTemperingRecipe>> matchingRecipes,
+            Map<Identifier, AggregatedTemperingDirection> directions,
+            List<Identifier> orderedDirectionIds
+    ) {
+        private static final ResolvedTemperingState EMPTY =
+                new ResolvedTemperingState(List.of(), Map.of(), List.of());
+
+        private ResolvedTemperingState {
+            matchingRecipes = matchingRecipes == null
+                    ? List.of()
+                    : List.copyOf(matchingRecipes);
+            directions = directions == null
+                    ? Map.of()
+                    : Collections.unmodifiableMap(new LinkedHashMap<>(directions));
+            orderedDirectionIds = orderedDirectionIds == null
+                    ? List.of()
+                    : List.copyOf(orderedDirectionIds);
+        }
     }
 
     private final class ObeliskTemperingResultSlot extends Slot {

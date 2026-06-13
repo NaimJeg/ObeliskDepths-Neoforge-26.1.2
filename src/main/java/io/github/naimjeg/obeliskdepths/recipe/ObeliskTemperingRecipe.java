@@ -6,7 +6,6 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import io.github.naimjeg.obeliskdepths.registry.ModRecipeSerializers;
 import io.github.naimjeg.obeliskdepths.registry.ModRecipeTypes;
 import io.github.naimjeg.obeliskdepths.tempering.ObeliskTemperingRoller;
-import io.github.naimjeg.obeliskdepths.tempering.TemperingDirection;
 import io.github.naimjeg.obeliskdepths.tempering.TemperingTemplateData;
 import io.github.naimjeg.obeliskdepths.tempering.TemperingTemplateItems;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -43,12 +42,10 @@ public record ObeliskTemperingRecipe(
         int maxRolls,
         float weightMultiplier,
         boolean replaceExisting,
-        List<TemperingDirection> allowedDirections
+        List<Identifier> directions
 ) implements Recipe<ObeliskTemperingRecipeInput> {
     private static final RecipeBookCategory RECIPE_BOOK_CATEGORY =
             new RecipeBookCategory();
-    private static final List<TemperingDirection> ALL_DIRECTIONS =
-            List.of(TemperingDirection.values());
 
     public static final MapCodec<ObeliskTemperingRecipe> CODEC =
             RecordCodecBuilder.mapCodec(instance -> instance.group(
@@ -82,10 +79,10 @@ public record ObeliskTemperingRecipe(
                     Codec.BOOL
                             .optionalFieldOf("replace_existing", false)
                             .forGetter(ObeliskTemperingRecipe::replaceExisting),
-                    TemperingDirection.CODEC
+                    Identifier.CODEC
                             .listOf()
-                            .optionalFieldOf("allowed_directions", ALL_DIRECTIONS)
-                            .forGetter(ObeliskTemperingRecipe::allowedDirections)
+                            .fieldOf("directions")
+                            .forGetter(ObeliskTemperingRecipe::directions)
             ).apply(instance, ObeliskTemperingRecipe::new));
 
     public static final StreamCodec<
@@ -107,11 +104,23 @@ public record ObeliskTemperingRecipe(
         minRolls = Math.max(1, minRolls);
         maxRolls = maxRolls <= 0 ? minRolls : Math.max(minRolls, maxRolls);
         weightMultiplier = Math.max(0.0F, weightMultiplier);
-        allowedDirections = normalizeAllowedDirections(allowedDirections);
+        directions = normalizeDirections(directions);
     }
 
     @Override
     public boolean matches(ObeliskTemperingRecipeInput input, Level level) {
+        return this.matchesBase(input, level);
+    }
+
+    /**
+     * Matches recipe inputs that are independent of direction. Direction is
+     * intentionally excluded so all base matches can be reverse-aggregated into
+     * virtual direction pools.
+     */
+    public boolean matchesBase(
+            ObeliskTemperingRecipeInput input,
+            Level level
+    ) {
         if (!this.weapon.test(input.weapon())) {
             return false;
         }
@@ -128,48 +137,38 @@ public record ObeliskTemperingRecipe(
             return false;
         }
 
-        if (!this.allowedDirections.contains(input.direction())) {
-            return false;
-        }
-
-        if (!TemperingTemplateItems.hasTemplateData(input.template())) {
+        if (!TemperingTemplateItems.isTemperingTemplate(
+                input.template()
+        )) {
             return false;
         }
 
         TemperingTemplateData templateData =
-                TemperingTemplateItems.getOrDefault(input.template());
+                TemperingTemplateItems.getOrDefault(
+                        input.template()
+                );
 
         if (templateData.tier() < this.minTier
                 || templateData.tier() > this.maxTier) {
             return false;
         }
 
-        // TODO: Define direction-to-ingredient and direction-to-affix weighting rules.
         return ObeliskTemperingRoller.canTemper(
                 input.weapon(),
                 this.replaceExisting
         );
     }
 
-    @Override
-    public ItemStack assemble(ObeliskTemperingRecipeInput input) {
-        return this.assembleWithRolls(input, this.minRolls);
+    public boolean supportsDirection(Identifier directionId) {
+        return directionId != null && this.directions.contains(directionId);
     }
 
-    public ItemStack assembleWithRolls(
-            ObeliskTemperingRecipeInput input,
-            int rolls
-    ) {
-        ItemStack result = input.weapon().copyWithCount(1);
-
-        boolean attached = ObeliskTemperingRoller.attachPendingRoll(
-                result,
-                this.pool,
-                rolls,
+    @Override
+    public ItemStack assemble(ObeliskTemperingRecipeInput input) {
+        return ObeliskTemperingRoller.canTemper(
+                input.weapon(),
                 this.replaceExisting
-        );
-
-        return attached ? result : ItemStack.EMPTY;
+        ) ? input.weapon().copyWithCount(1) : ItemStack.EMPTY;
     }
 
     public int computeRolls(
@@ -240,24 +239,30 @@ public record ObeliskTemperingRecipe(
         return ModRecipeTypes.OBELISK_TEMPERING.get();
     }
 
-    private static List<TemperingDirection> normalizeAllowedDirections(
-            List<TemperingDirection> allowedDirections
+    private static List<Identifier> normalizeDirections(
+            List<Identifier> directions
     ) {
-        if (allowedDirections == null || allowedDirections.isEmpty()) {
-            return ALL_DIRECTIONS;
+        if (directions == null || directions.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Obelisk tempering recipe must declare at least one direction"
+            );
         }
 
-        Set<TemperingDirection> normalized = new LinkedHashSet<>();
+        Set<Identifier> normalized = new LinkedHashSet<>();
 
-        for (TemperingDirection direction : allowedDirections) {
+        for (Identifier direction : directions) {
             if (direction != null) {
                 normalized.add(direction);
             }
         }
 
-        return normalized.isEmpty()
-                ? ALL_DIRECTIONS
-                : List.copyOf(normalized);
+        if (normalized.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Obelisk tempering recipe must declare at least one non-null direction"
+            );
+        }
+
+        return List.copyOf(normalized);
     }
 
     private static void encode(
@@ -275,10 +280,10 @@ public record ObeliskTemperingRecipe(
         ByteBufCodecs.VAR_INT.encode(buffer, recipe.maxRolls);
         ByteBufCodecs.FLOAT.encode(buffer, recipe.weightMultiplier);
         ByteBufCodecs.BOOL.encode(buffer, recipe.replaceExisting);
-        ByteBufCodecs.VAR_INT.encode(buffer, recipe.allowedDirections.size());
+        ByteBufCodecs.VAR_INT.encode(buffer, recipe.directions.size());
 
-        for (TemperingDirection direction : recipe.allowedDirections) {
-            TemperingDirection.STREAM_CODEC.encode(buffer, direction);
+        for (Identifier direction : recipe.directions) {
+            Identifier.STREAM_CODEC.encode(buffer, direction);
         }
     }
 
@@ -300,10 +305,10 @@ public record ObeliskTemperingRecipe(
         float weightMultiplier = ByteBufCodecs.FLOAT.decode(buffer);
         boolean replaceExisting = ByteBufCodecs.BOOL.decode(buffer);
         int directionCount = Math.max(0, ByteBufCodecs.VAR_INT.decode(buffer));
-        List<TemperingDirection> allowedDirections = new ArrayList<>();
+        List<Identifier> directions = new ArrayList<>();
 
         for (int i = 0; i < directionCount; i++) {
-            allowedDirections.add(TemperingDirection.STREAM_CODEC.decode(buffer));
+            directions.add(Identifier.STREAM_CODEC.decode(buffer));
         }
 
         return new ObeliskTemperingRecipe(
@@ -317,7 +322,7 @@ public record ObeliskTemperingRecipe(
                 maxRolls,
                 weightMultiplier,
                 replaceExisting,
-                allowedDirections
+                directions
         );
     }
 }

@@ -1,14 +1,12 @@
 package io.github.naimjeg.obeliskdepths.recipe;
 
-import io.github.naimjeg.obeliskdepths.tempering.TemperingDirection;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.RecipeInput;
 
 public record ObeliskTemperingRecipeInput(
         ItemStack weapon,
         ItemStack template,
-        ItemStack ingredient,
-        TemperingDirection direction
+        ItemStack ingredient
 ) implements RecipeInput {
 
     @Override
