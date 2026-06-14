@@ -19,7 +19,6 @@ public record DungeonGraph(
         String rootNodeId,
         Set<String> entryNodeIds,
         String primaryEntryNodeId,
-        String exitNodeId,
         List<DungeonGraphNode> nodes,
         List<DungeonGraphEdge> edges
 ) {
@@ -29,7 +28,6 @@ public record DungeonGraph(
     public DungeonGraph {
         requireId(rootNodeId, "Graph root node id must be non-empty");
         requireId(primaryEntryNodeId, "Graph primary entry node id must be non-empty");
-        requireId(exitNodeId, "Graph exit node id must be non-empty");
         if (entryNodeIds == null) {
             throw new IllegalArgumentException("Graph entry node ids must be present");
         }
@@ -86,10 +84,6 @@ public record DungeonGraph(
         return requireNode(this.primaryEntryNodeId);
     }
 
-    public DungeonGraphNode exitNode() {
-        return requireNode(this.exitNodeId);
-    }
-
     public List<DungeonGraphEdge> treeEdges() {
         return edgesOfKind(DungeonGraphEdgeKind.TREE);
     }
@@ -117,7 +111,6 @@ public record DungeonGraph(
     public List<DungeonGraphNode> treeChildren(String nodeId) {
         return this.treeEdges().stream()
                 .filter(edge -> edge.sourceNodeId().equals(nodeId))
-                .filter(edge -> !edge.targetNodeId().equals(this.exitNodeId))
                 .map(edge -> requireNode(edge.targetNodeId()))
                 .toList();
     }
@@ -125,7 +118,6 @@ public record DungeonGraph(
     public Optional<DungeonGraphNode> treeParent(String nodeId) {
         List<DungeonGraphEdge> parents = this.treeEdges().stream()
                 .filter(edge -> edge.targetNodeId().equals(nodeId))
-                .filter(edge -> !edge.sourceNodeId().equals(this.exitNodeId))
                 .toList();
         if (parents.isEmpty()) {
             return Optional.empty();

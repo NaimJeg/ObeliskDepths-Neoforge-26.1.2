@@ -26,7 +26,13 @@ public final class DungeonPiecePlanEmitter {
                     piece.id(),
                     piece.anchor(),
                     piece.bounds(),
-                    piece.primaryEntry()
+                    piece.primaryEntry(),
+                    piece.definitionId(),
+                    piece.templateId(),
+                    piece.rotation(),
+                    piece.mirror(),
+                    piece.templateOrigin(),
+                    piece.templateBacked()
             ));
         }
     }

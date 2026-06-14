@@ -1,0 +1,82 @@
+{
+  "type": "boss",
+  "allowed_rotations": [
+    "none",
+    "clockwise_90",
+    "clockwise_180",
+    "counterclockwise_90"
+  ],
+  "anchor": [
+    27,
+    2,
+    27
+  ],
+  "encounter": "obeliskdepths:boss_room",
+  "footprint": {
+    "layers": [
+      [
+        "#######",
+        "#######",
+        "#######",
+        "#######",
+        "#######",
+        "#######",
+        "#######"
+      ],
+      [
+        "#######",
+        "#######",
+        "#######",
+        "#######",
+        "#######",
+        "#######",
+        "#######"
+      ],
+      [
+        "#######",
+        "#######",
+        "#######",
+        "#######",
+        "#######",
+        "#######",
+        "#######"
+      ],
+      [
+        "#######",
+        "#######",
+        "#######",
+        "#######",
+        "#######",
+        "#######",
+        "#######"
+      ]
+    ]
+  },
+  "ports": [
+    {
+      "boundary_cell": {
+        "x": 6,
+        "y": 0,
+        "z": 3
+      },
+      "connector_type": "obeliskdepths:connector/basic_floor_passage",
+      "facing": "east",
+      "height_blocks": 4,
+      "id": "east_entry",
+      "opening_min": [
+        55,
+        1,
+        25
+      ],
+      "required": true,
+      "width_blocks": 4
+    }
+  ],
+  "supports_loop_edges": false,
+  "template": "obeliskdepths:dungeon/great_swamp/room/boss/altar_01",
+  "template_offset": [
+    2,
+    0,
+    1
+  ]
+}

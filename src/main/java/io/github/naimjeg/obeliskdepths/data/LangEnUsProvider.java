@@ -437,6 +437,70 @@ public final class LangEnUsProvider extends LanguageProvider {
                 "message.obeliskdepths.obelisk.activation_failed",
                 "Failed to open dungeon."
         );
+        add(
+                "message.obeliskdepths.portal.opened",
+                "Dungeon portal opened. Step into the portal to enter."
+        );
+        add(
+                "message.obeliskdepths.portal.no_anchor",
+                "No safe place was found for the dungeon portal."
+        );
+        add(
+                "message.obeliskdepths.portal.no_site",
+                "No unreached dungeon site was found nearby."
+        );
+        add(
+                "message.obeliskdepths.portal.spawn_failed",
+                "Failed to create the dungeon portal."
+        );
+        add(
+                "message.obeliskdepths.portal.entry.success",
+                "Entered dungeon."
+        );
+        add(
+                "message.obeliskdepths.portal.entry.session_missing",
+                "This dungeon portal is no longer active."
+        );
+        add(
+                "message.obeliskdepths.portal.entry.session_expired",
+                "This dungeon portal has expired."
+        );
+        add(
+                "message.obeliskdepths.portal.entry.instance_missing",
+                "This dungeon is no longer available."
+        );
+        add(
+                "message.obeliskdepths.portal.entry.access_denied",
+                "You cannot enter this dungeon portal."
+        );
+        add(
+                "message.obeliskdepths.portal.entry.bound_elsewhere",
+                "You are already bound to another dungeon."
+        );
+        add(
+                "message.obeliskdepths.portal.entry.destination_unavailable",
+                "No safe dungeon entry position is available."
+        );
+        add(
+                "message.obeliskdepths.portal.entry.registration_failed",
+                "Failed to register dungeon entry."
+        );
+        add(
+                "message.obeliskdepths.portal.entry.teleport_failed",
+                "Failed to enter the dungeon."
+        );
+        add(
+                "message.obeliskdepths.portal.entry.wrong_source_dimension",
+                "This dungeon portal belongs to another dimension."
+        );
+        add(
+                "message.obeliskdepths.dungeon.encounter_failed",
+                "The dungeon encounter failed. Returning you to safety."
+        );
+        add(
+                "message.obeliskdepths.dungeon.boundary_warning",
+                "You are outside your dungeon boundary."
+        );
         /*
          * Manual translations go here.
          *

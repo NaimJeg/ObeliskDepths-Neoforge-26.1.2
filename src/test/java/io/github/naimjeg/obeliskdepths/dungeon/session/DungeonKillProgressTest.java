@@ -6,6 +6,7 @@ import io.github.naimjeg.obeliskdepths.dungeon.encounter.DungeonEncounterPhase;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonDifficulty;
 import io.github.naimjeg.obeliskdepths.dungeon.raid.BuiltinDungeonRaids;
 import io.github.naimjeg.obeliskdepths.dungeon.raid.DungeonRaidInstance;
+import io.github.naimjeg.obeliskdepths.dungeon.raid.DungeonRaidStatus;
 import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomId;
 import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomState;
 import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomStatus;
@@ -135,6 +136,7 @@ public final class DungeonKillProgressTest {
                 0L
         );
         UUID mob = UUID.nameUUIDFromBytes("encounter-mob".getBytes());
+        UUID unknownMob = UUID.nameUUIDFromBytes("encounter-unknown-mob".getBytes());
 
         assertEquals(
                 12,
@@ -142,6 +144,7 @@ public final class DungeonKillProgressTest {
                 "encounter stores fixed normal-combat quota"
         );
         assertTrue(encounter.trackMob(mob), "first tracked mob is accepted");
+        assertFalse(encounter.resolveMob(unknownMob), "unknown mob resolution is rejected");
         assertTrue(encounter.resolveMob(mob), "first resolution is accepted");
         assertFalse(encounter.resolveMob(mob), "duplicate resolution is ignored");
         assertEquals(
@@ -179,6 +182,58 @@ public final class DungeonKillProgressTest {
         );
         assertTrue(encounter.markBossCompleted(), "boss completion is recorded once");
         assertFalse(encounter.markBossCompleted(), "boss completion is idempotent");
+        assertTrue(encounter.markEncounterComplete(), "complete transition updates encounter");
+        assertEquals(
+                DungeonEncounterPhase.COMPLETE,
+                encounter.encounterPhase(),
+                "complete transition sets phase"
+        );
+        assertEquals(
+                DungeonRaidStatus.WON,
+                encounter.status(),
+                "complete transition sets raid status"
+        );
+        assertTrue(encounter.isTerminal(), "complete encounter is terminal");
+
+        DungeonRaidInstance expired = DungeonRaidInstance.createInstanceEncounter(
+                new DungeonInstanceId(UUID.nameUUIDFromBytes("expired-instance".getBytes())),
+                BuiltinDungeonRaids.COMBAT_ROOM,
+                12,
+                4,
+                0L
+        );
+        assertTrue(expired.markEncounterExpired(), "expired transition updates encounter");
+        assertEquals(
+                DungeonEncounterPhase.EXPIRED,
+                expired.encounterPhase(),
+                "expired transition sets phase"
+        );
+        assertEquals(
+                DungeonRaidStatus.EXPIRED,
+                expired.status(),
+                "expired transition sets raid status"
+        );
+        assertTrue(expired.isTerminal(), "expired encounter is terminal");
+
+        DungeonRaidInstance failed = DungeonRaidInstance.createInstanceEncounter(
+                new DungeonInstanceId(UUID.nameUUIDFromBytes("failed-instance".getBytes())),
+                BuiltinDungeonRaids.COMBAT_ROOM,
+                12,
+                4,
+                0L
+        );
+        assertTrue(failed.markEncounterFailed(), "failed transition updates encounter");
+        assertEquals(
+                DungeonEncounterPhase.FAILED,
+                failed.encounterPhase(),
+                "failed transition sets phase"
+        );
+        assertEquals(
+                DungeonRaidStatus.FAILED,
+                failed.status(),
+                "failed transition sets raid status"
+        );
+        assertTrue(failed.isTerminal(), "failed encounter is terminal");
     }
 
     private static void testInitialBossRoomLocked() {

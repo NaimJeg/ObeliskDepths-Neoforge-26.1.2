@@ -4,6 +4,7 @@ import io.github.naimjeg.obeliskdepths.ObeliskDepths;
 import io.github.naimjeg.obeliskdepths.dungeon.encounter.DungeonEncounterPhase;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonInstance;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonStatus;
+import io.github.naimjeg.obeliskdepths.dungeon.raid.DungeonRaidInstance;
 import io.github.naimjeg.obeliskdepths.dungeon.raid.DungeonRaidPlayers;
 import io.github.naimjeg.obeliskdepths.dungeon.state.DungeonManagerSavedData;
 import io.github.naimjeg.obeliskdepths.registry.ModDimensions;
@@ -34,9 +35,20 @@ public final class DungeonSessionProgressBarService {
 
     public static void tick(ServerLevel level) {
         DungeonManagerSavedData data = DungeonManagerSavedData.get(level);
+        Set<UUID> validActiveSessions = new HashSet<>();
 
         for (DungeonSession session : data.sessions()) {
+            if (session.state().needsRuntimeTick()) {
+                validActiveSessions.add(session.id());
+            }
+
             updateSession(level, session);
+        }
+
+        for (UUID sessionId : List.copyOf(BARS.keySet())) {
+            if (!validActiveSessions.contains(sessionId)) {
+                removeSession(sessionId);
+            }
         }
     }
 
@@ -66,9 +78,9 @@ public final class DungeonSessionProgressBarService {
                 DungeonSessionProgressBarService::createBar
         );
 
-        DungeonKillProgress progress = session.progress();
-        bar.setName(title(progress));
-        bar.setProgress(progress.remainingProgress());
+        DungeonRaidInstance encounter = data.findActiveEncounter(instance.get().id()).orElseThrow();
+        bar.setName(title(encounter));
+        bar.setProgress(remainingProgress(encounter));
         synchronizePlayers(bar, eligiblePlayers);
         bar.setVisible(true);
     }
@@ -104,6 +116,12 @@ public final class DungeonSessionProgressBarService {
         return progress.targetKillScore() > 0 && !progress.isComplete();
     }
 
+    static boolean shouldDisplayProgress(DungeonRaidInstance encounter) {
+        return encounter.normalKillQuota() > 0
+                && encounter.encounterPhase() == DungeonEncounterPhase.COMBAT
+                && !encounter.normalKillQuotaComplete();
+    }
+
     private static boolean shouldDisplaySession(
             DungeonManagerSavedData data,
             DungeonSession session,
@@ -112,9 +130,8 @@ public final class DungeonSessionProgressBarService {
         return session.state().needsRuntimeTick()
                 && instance.status() == DungeonStatus.ACTIVE
                 && data.findActiveEncounter(instance.id())
-                        .map(encounter -> encounter.encounterPhase() == DungeonEncounterPhase.COMBAT)
-                        .orElse(false)
-                && shouldDisplayProgress(session.progress());
+                        .map(DungeonSessionProgressBarService::shouldDisplayProgress)
+                        .orElse(false);
     }
 
     private static ServerBossEvent createBar(UUID sessionId) {
@@ -138,6 +155,25 @@ public final class DungeonSessionProgressBarService {
                 progress.clampedCurrentKillScore(),
                 progress.targetKillScore()
         );
+    }
+
+    private static Component title(DungeonRaidInstance encounter) {
+        return Component.translatable(
+                TITLE_KEY,
+                Math.min(encounter.creditedNormalKills(), encounter.normalKillQuota()),
+                encounter.normalKillQuota()
+        );
+    }
+
+    private static float remainingProgress(DungeonRaidInstance encounter) {
+        int target = encounter.normalKillQuota();
+
+        if (target <= 0) {
+            return 1.0F;
+        }
+
+        int current = Math.min(Math.max(0, encounter.creditedNormalKills()), target);
+        return Math.max(0.0F, Math.min(1.0F, 1.0F - (current / (float) target)));
     }
 
     private static void synchronizePlayers(

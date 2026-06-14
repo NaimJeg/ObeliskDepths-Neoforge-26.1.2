@@ -66,5 +66,5 @@
     }
   ],
   "supports_loop_edges": false,
-  "template": "obeliskdepths:dungeon/basic/room/obelisk_sanctum_01"
+  "template": "obeliskdepths:dungeon/great_swamp/room/treasure/obelisk_sanctum_01"
 }

@@ -63,11 +63,22 @@
       }
     ]
   },
-  "enabled": false,
   "room_pools": {
+    "boss": [
+      {
+        "room": "obeliskdepths:great_swamp/boss/altar",
+        "weight": 1
+      }
+    ],
     "combat": [
       {
         "room": "obeliskdepths:great_swamp/combat/open_pavilion",
+        "weight": 1
+      }
+    ],
+    "start": [
+      {
+        "room": "obeliskdepths:great_swamp/start/open_pavilion",
         "weight": 1
       }
     ],

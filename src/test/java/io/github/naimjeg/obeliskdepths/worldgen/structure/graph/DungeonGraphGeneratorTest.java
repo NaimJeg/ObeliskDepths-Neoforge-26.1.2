@@ -3,16 +3,15 @@ package io.github.naimjeg.obeliskdepths.worldgen.structure.graph;
 import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomType;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonGraphEmbeddingPlanner;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutPlan;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.piece.DungeonCorridorRouter;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.piece.DungeonPieceMetadata;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.piece.DungeonPiecePlan;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.piece.DungeonPiecePlanCompiler;
-import io.github.naimjeg.obeliskdepths.worldgen.structure.piece.DungeonCorridorRouter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Queue;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
@@ -62,7 +61,6 @@ public final class DungeonGraphGeneratorTest {
 
             assertEquals(graph, DungeonGraphGenerator.generate(seed), "deterministic graph for seed " + seed);
             assertEquals(1L, countType(graph, DungeonRoomType.BOSS), "one boss");
-            assertEquals(1L, countType(graph, DungeonRoomType.EXIT), "one exit");
             assertTrue(graph.bossNode().id().equals(graph.rootNodeId()), "boss is root");
             assertTrue(graph.entryNodeIds().size() >= 2, "multiple starts");
             assertEquals((long) graph.entryNodeIds().size(), countType(graph, DungeonRoomType.START), "entries are starts");
@@ -115,11 +113,9 @@ public final class DungeonGraphGeneratorTest {
                         "boss",
                         Set.of("start_0", "start_1"),
                         "start_0",
-                        "exit",
                         List.of(
                                 node("boss", DungeonRoomType.BOSS),
                                 node("boss", DungeonRoomType.COMBAT),
-                                node("exit", DungeonRoomType.EXIT),
                                 node("start_0", DungeonRoomType.START),
                                 node("start_1", DungeonRoomType.START)
                         ),
@@ -138,7 +134,6 @@ public final class DungeonGraphGeneratorTest {
                         "boss",
                         Set.of("start_0", "start_1"),
                         "start_0",
-                        "exit",
                         validNodes(),
                         List.of(
                                 edge("tree_boss_a", "boss", "a", DungeonGraphEdgeKind.TREE),
@@ -146,7 +141,6 @@ public final class DungeonGraphGeneratorTest {
                                 edge("tree_start_0_a", "start_0", "a", DungeonGraphEdgeKind.TREE),
                                 edge("tree_b_start_0", "b", "start_0", DungeonGraphEdgeKind.TREE),
                                 edge("tree_b_start_1", "b", "start_1", DungeonGraphEdgeKind.TREE),
-                                edge("tree_boss_exit", "boss", "exit", DungeonGraphEdgeKind.TREE),
                                 edge("loop_a_b", "a", "b", DungeonGraphEdgeKind.LOOP)
                         )
                 ),
@@ -158,7 +152,6 @@ public final class DungeonGraphGeneratorTest {
                         "boss",
                         Set.of("start_0"),
                         "start_0",
-                        "exit",
                         validNodes(),
                         validEdges()
                 ),
@@ -175,7 +168,6 @@ public final class DungeonGraphGeneratorTest {
                         "boss",
                         Set.of("start_0", "start_1"),
                         "start_0",
-                        "exit",
                         withTreasureNode(),
                         withTreasureEdges()
                 ),
@@ -185,7 +177,7 @@ public final class DungeonGraphGeneratorTest {
 
     private static void debugCommandHasFixedSyntax() throws Exception {
         String source = Files.readString(Path.of(
-                "src/main/java/io/github/naimjeg/obeliskdepths/command/DungeonDebugCommands.java"
+                "src/main/java/io/github/naimjeg/obeliskdepths/command/DungeonDebugLayoutCommands.java"
         ));
 
         assertTrue(source.contains("Commands.literal(\"layout-test\")"), "layout-test command exists");
@@ -200,7 +192,6 @@ public final class DungeonGraphGeneratorTest {
                 "boss",
                 Set.of("start_0", "start_1"),
                 "start_0",
-                "exit",
                 validNodes(),
                 edges
         );
@@ -209,7 +200,6 @@ public final class DungeonGraphGeneratorTest {
     private static List<DungeonGraphNode> validNodes() {
         return List.of(
                 node("boss", DungeonRoomType.BOSS),
-                node("exit", DungeonRoomType.EXIT),
                 node("a", DungeonRoomType.COMBAT),
                 node("b", DungeonRoomType.COMBAT),
                 node("a2", DungeonRoomType.COMBAT),
@@ -235,7 +225,6 @@ public final class DungeonGraphGeneratorTest {
                 edge("tree_b2_b3", "b2", "b3", DungeonGraphEdgeKind.TREE),
                 edge("tree_b3_b4", "b3", "b4", DungeonGraphEdgeKind.TREE),
                 edge("tree_b4_start_1", "b4", "start_1", DungeonGraphEdgeKind.TREE),
-                edge("tree_boss_exit", "boss", "exit", DungeonGraphEdgeKind.TREE),
                 edge("loop_a_b", "a", "b", DungeonGraphEdgeKind.LOOP)
         );
     }
@@ -282,7 +271,7 @@ public final class DungeonGraphGeneratorTest {
     ) {
         assertTrue(!analysis.treeParentByNode().containsKey(graph.rootNodeId()), "boss has no tree parent");
         for (DungeonGraphNode node : graph.nodes()) {
-            if (node.id().equals(graph.rootNodeId()) || node.id().equals(graph.exitNodeId())) {
+            if (node.id().equals(graph.rootNodeId())) {
                 continue;
             }
             assertTrue(analysis.treeParentByNode().containsKey(node.id()), "normal node has tree parent: " + node.id());

@@ -837,15 +837,6 @@ public final class DungeonCorridorRouter {
         DungeonLayoutNode from = nodes.get(edge.fromRoomId());
         DungeonLayoutNode to = nodes.get(edge.toRoomId());
 
-        if (from != null
-                && to != null
-                && ((from.type() == DungeonRoomType.BOSS
-                && to.type() == DungeonRoomType.EXIT)
-                || (from.type() == DungeonRoomType.EXIT
-                && to.type() == DungeonRoomType.BOSS))) {
-            return 0;
-        }
-
         return switch (edge.kind()) {
             case TREE -> 1;
             case LOOP -> 2;

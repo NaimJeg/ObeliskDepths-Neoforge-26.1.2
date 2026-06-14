@@ -9,6 +9,7 @@ import io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSite;
 import io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSitePlacement;
 import io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSiteKey;
 import io.github.naimjeg.obeliskdepths.dungeon.site.ResolvedDungeonSite;
+import io.github.naimjeg.obeliskdepths.dungeon.site.WorldgenDungeonSiteDiagnostic;
 import io.github.naimjeg.obeliskdepths.dungeon.site.WorldgenDungeonSiteLocator;
 import io.github.naimjeg.obeliskdepths.dungeon.state.DungeonManagerSavedData;
 import io.github.naimjeg.obeliskdepths.registry.ModDimensions;
@@ -479,25 +480,16 @@ public final class DungeonSiteDebugCommands {
                         origin,
                         ignored -> true
                 );
+        WorldgenDungeonSiteDiagnostic diagnostic =
+                new WorldgenDungeonSiteDiagnostic(
+                        origin,
+                        warmedChunks,
+                        warmedChunkCount,
+                        prototype.map(site -> site.site().key())
+                );
 
-        source.sendFailure(Component.literal(
-                "No generated authoritative dungeon site found near origin "
-                        + origin
-                        + " in "
-                        + dungeonLevel.dimension().identifier()
-                        + ". Move/search farther, generate chunks in the ObeliskDepths dimension, "
-                        + "or verify structure placement/biome tags."
-        ));
-
-        source.sendFailure(Component.literal(
-                "Diagnostics: warmedChunks="
-                        + warmedChunks
-                        + ", warmedChunkCount="
-                        + warmedChunkCount
-                        + ", prototypePreviewNearby="
-                        + prototype.map(site -> site.site().key().toString()).orElse("<none>")
-                        + ". Prototype preview metadata is debug-only and was not used."
-        ));
+        source.sendFailure(Component.literal(diagnostic.notFoundMessage(dungeonLevel)));
+        source.sendFailure(Component.literal(diagnostic.detailMessage()));
     }
 
     private static ServerLevel dungeonLevel(CommandSourceStack source) {

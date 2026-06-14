@@ -41,6 +41,10 @@ public final class ModDataGenerators {
 
     @SubscribeEvent
     public static void gatherServerData(GatherDataEvent.Server event) {
-
+        /*  NEVER NEVER NEVER NEVER USE THIS EVENT
+        *   Neoforge API separated the event
+        *   but the separated firing will delete resources generated from the other event
+        *   Only use one event could collect all the resource
+        * */
     }
 }

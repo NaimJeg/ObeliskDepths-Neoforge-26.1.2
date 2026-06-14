@@ -8,6 +8,7 @@ public enum DungeonStatus implements StringRepresentable {
     REWARD_PHASE("reward_phase"),
     PORTAL_CLOSED("portal_closed"),
     CLEARED("cleared"),
+    FAILED("failed"),
     EXPIRED("expired");
 
     public static final Codec<DungeonStatus> CODEC =

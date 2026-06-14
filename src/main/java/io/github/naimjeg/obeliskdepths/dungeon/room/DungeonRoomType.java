@@ -7,7 +7,6 @@ public enum DungeonRoomType implements StringRepresentable {
     START("start"),
     COMBAT("combat"),
     TREASURE("treasure"),
-    EXIT("exit"),
     BOSS("boss");
 
     public static final Codec<DungeonRoomType> CODEC =

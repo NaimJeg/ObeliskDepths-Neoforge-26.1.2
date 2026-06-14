@@ -35,9 +35,8 @@ public final class DungeonGraphAnalyzer {
             int entryDistance = distanceToEntry.getOrDefault(node.id(), Integer.MAX_VALUE);
             int treeDepth = treeDepthByNode.getOrDefault(node.id(), Integer.MAX_VALUE);
             int degree = graph.incidentEdges(node.id()).size();
-            boolean excludedExit = node.id().equals(graph.exitNodeId());
             OptionalInt sector = optional(sectorByNode.get(node.id()));
-            OptionalInt depthBand = excludedExit || distance == Integer.MAX_VALUE
+            OptionalInt depthBand = distance == Integer.MAX_VALUE
                     ? OptionalInt.empty()
                     : OptionalInt.of(distance);
 
@@ -54,7 +53,7 @@ public final class DungeonGraphAnalyzer {
                     depthBand
             ));
 
-            if (!excludedExit && distance != Integer.MAX_VALUE) {
+            if (distance != Integer.MAX_VALUE) {
                 depthBands.computeIfAbsent(distance, ignored -> new ArrayList<>()).add(node.id());
             }
 
@@ -79,9 +78,6 @@ public final class DungeonGraphAnalyzer {
     private static Map<String, String> treeParents(DungeonGraph graph) {
         Map<String, String> result = new LinkedHashMap<>();
         for (DungeonGraphEdge edge : graph.treeEdges()) {
-            if (edge.targetNodeId().equals(graph.exitNodeId())) {
-                continue;
-            }
             result.put(edge.targetNodeId(), edge.sourceNodeId());
         }
         return result;
@@ -93,9 +89,6 @@ public final class DungeonGraphAnalyzer {
             result.put(node.id(), new ArrayList<>());
         }
         for (DungeonGraphEdge edge : graph.treeEdges()) {
-            if (edge.targetNodeId().equals(graph.exitNodeId())) {
-                continue;
-            }
             result.get(edge.sourceNodeId()).add(edge.targetNodeId());
         }
         return result;
@@ -119,7 +112,6 @@ public final class DungeonGraphAnalyzer {
             }
         }
 
-        result.put(graph.exitNodeId(), 1);
         return result;
     }
 
@@ -130,7 +122,6 @@ public final class DungeonGraphAnalyzer {
         Map<String, Integer> result = new LinkedHashMap<>();
         List<String> rootChildren = graph.treeEdges().stream()
                 .filter(edge -> edge.sourceNodeId().equals(graph.rootNodeId()))
-                .filter(edge -> !edge.targetNodeId().equals(graph.exitNodeId()))
                 .map(DungeonGraphEdge::targetNodeId)
                 .toList();
 
@@ -192,9 +183,6 @@ public final class DungeonGraphAnalyzer {
     private static Set<String> articulationPoints(DungeonGraph graph) {
         Set<String> result = new LinkedHashSet<>();
         for (DungeonGraphNode removed : graph.nodes()) {
-            if (removed.id().equals(graph.exitNodeId())) {
-                continue;
-            }
             if (!connectedWithout(graph, removed.id())) {
                 result.add(removed.id());
             }
@@ -208,7 +196,7 @@ public final class DungeonGraphAnalyzer {
     ) {
         String start = graph.nodes().stream()
                 .map(DungeonGraphNode::id)
-                .filter(id -> !id.equals(removedNodeId) && !id.equals(graph.exitNodeId()))
+                .filter(id -> !id.equals(removedNodeId))
                 .findFirst()
                 .orElse(null);
         if (start == null) {
@@ -225,7 +213,7 @@ public final class DungeonGraphAnalyzer {
                 continue;
             }
             for (String neighbor : graph.neighbors(current)) {
-                if (!neighbor.equals(removedNodeId) && !neighbor.equals(graph.exitNodeId())) {
+                if (!neighbor.equals(removedNodeId)) {
                     queue.add(neighbor);
                 }
             }
@@ -233,7 +221,6 @@ public final class DungeonGraphAnalyzer {
 
         long normalNodeCount = graph.nodes().stream()
                 .filter(node -> !node.id().equals(removedNodeId))
-                .filter(node -> !node.id().equals(graph.exitNodeId()))
                 .count();
         return visited.size() == normalNodeCount;
     }

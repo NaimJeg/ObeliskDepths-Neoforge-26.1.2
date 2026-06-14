@@ -7,7 +7,8 @@ public enum DungeonEncounterPhase implements StringRepresentable {
     COMBAT("combat"),
     BOSS("boss"),
     COMPLETE("complete"),
-    EXPIRED("expired");
+    EXPIRED("expired"),
+    FAILED("failed");
 
     public static final Codec<DungeonEncounterPhase> CODEC =
             StringRepresentable.fromEnum(DungeonEncounterPhase::values);

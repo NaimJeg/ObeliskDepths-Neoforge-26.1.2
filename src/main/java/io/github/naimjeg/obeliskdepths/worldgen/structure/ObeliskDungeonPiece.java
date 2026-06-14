@@ -2,18 +2,24 @@ package io.github.naimjeg.obeliskdepths.worldgen.structure;
 
 import io.github.naimjeg.obeliskdepths.registry.ModBlocks;
 import io.github.naimjeg.obeliskdepths.registry.ModWorldgen;
+import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomRotation;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.StructureManager;
 import net.minecraft.world.level.WorldGenLevel;
+import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.StructurePiece;
 import net.minecraft.world.level.levelgen.structure.pieces.StructurePieceSerializationContext;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
+import java.util.Optional;
 
 /*
  * Worldgen-owned dungeon piece.
@@ -25,6 +31,7 @@ import net.minecraft.world.level.levelgen.structure.pieces.StructurePieceSeriali
  *   role      - semantic role of this piece, such as start/combat/corridor
  *   roomId    - stable id used by runtime room state
  *   anchorPos - semantic anchor for spawn/reward/debug logic
+ *   template  - optional authored NBT template identity and placement metadata
  *   boundingBox - inherited physical bounds used for chunk placement
  *
  * Runtime systems must project room metadata from this piece instead of
@@ -37,11 +44,25 @@ public final class ObeliskDungeonPiece extends StructurePiece {
     private static final String TAG_ANCHOR_Y = "AnchorY";
     private static final String TAG_ANCHOR_Z = "AnchorZ";
     private static final String TAG_PRIMARY_ENTRY = "PrimaryEntry";
+    private static final String TAG_DEFINITION_ID = "DefinitionId";
+    private static final String TAG_TEMPLATE_ID = "TemplateId";
+    private static final String TAG_ROTATION = "Rotation";
+    private static final String TAG_MIRROR = "Mirror";
+    private static final String TAG_TEMPLATE_X = "TemplateX";
+    private static final String TAG_TEMPLATE_Y = "TemplateY";
+    private static final String TAG_TEMPLATE_Z = "TemplateZ";
+    private static final String TAG_TEMPLATE_BACKED = "TemplateBacked";
 
     private final ObeliskDungeonPieceRole role;
     private final String roomId;
     private final BlockPos anchorPos;
     private final boolean primaryEntry;
+    private final Optional<Identifier> definitionId;
+    private final Optional<Identifier> templateId;
+    private final DungeonRoomRotation rotation;
+    private final boolean mirror;
+    private final BlockPos templateOrigin;
+    private final boolean templateBacked;
 
     public ObeliskDungeonPiece(
             ObeliskDungeonPieceRole role,
@@ -59,6 +80,34 @@ public final class ObeliskDungeonPiece extends StructurePiece {
             BoundingBox boundingBox,
             boolean primaryEntry
     ) {
+        this(
+                role,
+                roomId,
+                anchorPos,
+                boundingBox,
+                primaryEntry,
+                Optional.empty(),
+                Optional.empty(),
+                DungeonRoomRotation.NONE,
+                false,
+                new BlockPos(boundingBox.minX(), boundingBox.minY(), boundingBox.minZ()),
+                false
+        );
+    }
+
+    public ObeliskDungeonPiece(
+            ObeliskDungeonPieceRole role,
+            String roomId,
+            BlockPos anchorPos,
+            BoundingBox boundingBox,
+            boolean primaryEntry,
+            Optional<Identifier> definitionId,
+            Optional<Identifier> templateId,
+            DungeonRoomRotation rotation,
+            boolean mirror,
+            BlockPos templateOrigin,
+            boolean templateBacked
+    ) {
         super(
                 ModWorldgen.OBELISK_DUNGEON_PIECE.get(),
                 0,
@@ -69,6 +118,14 @@ public final class ObeliskDungeonPiece extends StructurePiece {
         this.roomId = roomId;
         this.anchorPos = anchorPos;
         this.primaryEntry = primaryEntry && role == ObeliskDungeonPieceRole.START_ROOM;
+        this.definitionId = definitionId == null ? Optional.empty() : definitionId;
+        this.templateId = templateId == null ? Optional.empty() : templateId;
+        this.rotation = rotation == null ? DungeonRoomRotation.NONE : rotation;
+        this.mirror = mirror;
+        this.templateOrigin = templateOrigin == null
+                ? new BlockPos(boundingBox.minX(), boundingBox.minY(), boundingBox.minZ())
+                : templateOrigin;
+        this.templateBacked = templateBacked && this.templateId.isPresent();
     }
 
     public ObeliskDungeonPiece(
@@ -91,6 +148,20 @@ public final class ObeliskDungeonPiece extends StructurePiece {
 
         this.primaryEntry = tag.getBooleanOr(TAG_PRIMARY_ENTRY, false)
                 && this.role == ObeliskDungeonPieceRole.START_ROOM;
+        this.definitionId = parseIdentifier(tag.getStringOr(TAG_DEFINITION_ID, ""));
+        this.templateId = parseIdentifier(tag.getStringOr(TAG_TEMPLATE_ID, ""));
+        this.rotation = rotationByName(tag.getStringOr(
+                TAG_ROTATION,
+                DungeonRoomRotation.NONE.getSerializedName()
+        ));
+        this.mirror = tag.getBooleanOr(TAG_MIRROR, false);
+        this.templateOrigin = new BlockPos(
+                tag.getIntOr(TAG_TEMPLATE_X, this.boundingBox.minX()),
+                tag.getIntOr(TAG_TEMPLATE_Y, this.boundingBox.minY()),
+                tag.getIntOr(TAG_TEMPLATE_Z, this.boundingBox.minZ())
+        );
+        this.templateBacked = tag.getBooleanOr(TAG_TEMPLATE_BACKED, false)
+                && this.templateId.isPresent();
     }
 
     public ObeliskDungeonPieceRole role() {
@@ -109,6 +180,30 @@ public final class ObeliskDungeonPiece extends StructurePiece {
         return this.primaryEntry;
     }
 
+    public Optional<Identifier> definitionId() {
+        return this.definitionId;
+    }
+
+    public Optional<Identifier> templateId() {
+        return this.templateId;
+    }
+
+    public DungeonRoomRotation rotation() {
+        return this.rotation;
+    }
+
+    public boolean mirror() {
+        return this.mirror;
+    }
+
+    public BlockPos templateOrigin() {
+        return this.templateOrigin;
+    }
+
+    public boolean templateBacked() {
+        return this.templateBacked;
+    }
+
     @Override
     protected void addAdditionalSaveData(
             StructurePieceSerializationContext context,
@@ -120,6 +215,14 @@ public final class ObeliskDungeonPiece extends StructurePiece {
         tag.putInt(TAG_ANCHOR_Y, this.anchorPos.getY());
         tag.putInt(TAG_ANCHOR_Z, this.anchorPos.getZ());
         tag.putBoolean(TAG_PRIMARY_ENTRY, this.primaryEntry);
+        this.definitionId.ifPresent(id -> tag.putString(TAG_DEFINITION_ID, id.toString()));
+        this.templateId.ifPresent(id -> tag.putString(TAG_TEMPLATE_ID, id.toString()));
+        tag.putString(TAG_ROTATION, this.rotation.getSerializedName());
+        tag.putBoolean(TAG_MIRROR, this.mirror);
+        tag.putInt(TAG_TEMPLATE_X, this.templateOrigin.getX());
+        tag.putInt(TAG_TEMPLATE_Y, this.templateOrigin.getY());
+        tag.putInt(TAG_TEMPLATE_Z, this.templateOrigin.getZ());
+        tag.putBoolean(TAG_TEMPLATE_BACKED, this.templateBacked);
     }
 
     @Override
@@ -141,6 +244,7 @@ public final class ObeliskDungeonPiece extends StructurePiece {
 
             case CORRIDOR -> placeCorridor(
                     level,
+                    random,
                     chunkBB,
                     pieceBB
             );
@@ -148,25 +252,25 @@ public final class ObeliskDungeonPiece extends StructurePiece {
             case START_ROOM,
                  COMBAT_ROOM,
                  TREASURE_ROOM,
-                 BOSS_ROOM,
-                 EXIT_ROOM -> placeRoom(
+                 BOSS_ROOM -> placeRoom(
                     level,
+                    random,
                     chunkBB,
                     pieceBB
             );
         }
     }
 
-    /*
-     * Current graph/debug renderer: generated pieces expose authoritative
-     * site/room/corridor metadata and place only floor/path markers. Authored
-     * room architecture and NBT templates are intentionally deferred.
-     */
     private void placeRoom(
             WorldGenLevel level,
+            RandomSource random,
             BoundingBox chunkBB,
             BoundingBox pieceBB
     ) {
+        if (placeTemplate(level, random, chunkBB)) {
+            return;
+        }
+
         /*
          * The dungeon is generated inside solid terrain. Clear the piece volume
          * above its floor so the room is physically traversable.
@@ -188,9 +292,14 @@ public final class ObeliskDungeonPiece extends StructurePiece {
 
     private void placeCorridor(
             WorldGenLevel level,
+            RandomSource random,
             BoundingBox chunkBB,
             BoundingBox pieceBB
     ) {
+        if (placeTemplate(level, random, chunkBB)) {
+            return;
+        }
+
         carveInterior(level, chunkBB, pieceBB);
 
         placeFloorPlane(
@@ -198,6 +307,32 @@ public final class ObeliskDungeonPiece extends StructurePiece {
                 chunkBB,
                 pieceBB,
                 corridorFloorState()
+        );
+    }
+
+    private boolean placeTemplate(
+            WorldGenLevel level,
+            RandomSource random,
+            BoundingBox chunkBB
+    ) {
+        if (!this.templateBacked || this.templateId.isEmpty()) {
+            return false;
+        }
+
+        StructureTemplate template = level.getLevel()
+                .getStructureManager()
+                .getOrCreate(this.templateId.get());
+        StructurePlaceSettings settings = new StructurePlaceSettings()
+                .setBoundingBox(chunkBB)
+                .setRotation(this.rotation.toMinecraftRotation())
+                .setMirror(this.mirror ? Mirror.LEFT_RIGHT : Mirror.NONE);
+        return template.placeInWorld(
+                level,
+                this.templateOrigin,
+                this.templateOrigin,
+                settings,
+                random,
+                2
         );
     }
 
@@ -259,7 +394,7 @@ public final class ObeliskDungeonPiece extends StructurePiece {
         }
 
         BlockState marker = switch (this.role) {
-            case START_ROOM, EXIT_ROOM -> ModBlocks.DUNGEON_LAMP.get().defaultBlockState();
+            case START_ROOM -> ModBlocks.DUNGEON_LAMP.get().defaultBlockState();
             case COMBAT_ROOM -> ModBlocks.REINFORCED_DUNGEON_STONE.get().defaultBlockState();
             case TREASURE_ROOM -> ModBlocks.GREAT_SWAMP_TAXODIUM_ROOT_TANGLE.get().defaultBlockState();
             case BOSS_ROOM -> ModBlocks.OBELISK.get().defaultBlockState();
@@ -324,7 +459,7 @@ public final class ObeliskDungeonPiece extends StructurePiece {
 
     private BlockState floorStateForRole() {
         return switch (this.role) {
-            case SITE, START_ROOM, EXIT_ROOM, CORRIDOR -> ModBlocks.DUNGEON_BRICKS.get().defaultBlockState();
+            case SITE, START_ROOM, CORRIDOR -> ModBlocks.DUNGEON_BRICKS.get().defaultBlockState();
             case COMBAT_ROOM -> ModBlocks.DUNGEON_STONE.get().defaultBlockState();
             case TREASURE_ROOM, BOSS_ROOM -> ModBlocks.DUNGEON_TILES.get().defaultBlockState();
         };
@@ -336,5 +471,23 @@ public final class ObeliskDungeonPiece extends StructurePiece {
         }
 
         return ModBlocks.DUNGEON_BRICKS.get().defaultBlockState();
+    }
+
+    private static Optional<Identifier> parseIdentifier(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return Optional.empty();
+        }
+
+        return Optional.of(Identifier.parse(raw));
+    }
+
+    private static DungeonRoomRotation rotationByName(String raw) {
+        for (DungeonRoomRotation rotation : DungeonRoomRotation.values()) {
+            if (rotation.getSerializedName().equals(raw)) {
+                return rotation;
+            }
+        }
+
+        return DungeonRoomRotation.NONE;
     }
 }

@@ -29,7 +29,9 @@ public final class DungeonCleanupService {
         List<DungeonInstance> targets = new ArrayList<>();
 
         for (DungeonInstance instance : data.instances()) {
-            if (instance.status() == DungeonStatus.PORTAL_CLOSED) {
+            if (instance.status() == DungeonStatus.PORTAL_CLOSED
+                    || instance.status() == DungeonStatus.FAILED
+                    || instance.status() == DungeonStatus.EXPIRED) {
                 targets.add(instance);
             }
         }

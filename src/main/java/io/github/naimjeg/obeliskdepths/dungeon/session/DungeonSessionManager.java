@@ -7,6 +7,9 @@ import io.github.naimjeg.obeliskdepths.dungeon.encounter.DungeonMobResolution;
 import io.github.naimjeg.obeliskdepths.dungeon.id.DungeonInstanceId;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonInstance;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonInstanceService;
+import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonStatus;
+import io.github.naimjeg.obeliskdepths.dungeon.reward.DungeonRewardClaimResult;
+import io.github.naimjeg.obeliskdepths.dungeon.reward.DungeonRewardService;
 import io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSite;
 import io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSiteKey;
 import io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSiteProjectionCache;
@@ -19,10 +22,7 @@ import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.Containers;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 
 public final class DungeonSessionManager {
     public static final int ABANDON_GRACE_TICKS = 20 * 90;
@@ -67,7 +67,7 @@ public final class DungeonSessionManager {
             return session;
         }
 
-        DungeonSession created = DungeonSession.create(
+        DungeonSession created = DungeonSession.createForPortal(
                 instance,
                 portalSession.opener(),
                 fromPortalAccessMode(portalSession.accessMode()),
@@ -108,7 +108,7 @@ public final class DungeonSessionManager {
          * semantics. It creates the minimum runtime session needed by encounter
          * cleanup/progress systems after a real authoritative site is reserved.
          */
-        DungeonSession created = DungeonSession.create(
+        DungeonSession created = DungeonSession.createActive(
                 instance,
                 starterPlayerId,
                 DungeonAccessMode.OPEN,
@@ -142,6 +142,14 @@ public final class DungeonSessionManager {
     ) {
         return DungeonManagerSavedData.get(dungeonLevel)
                 .findSessionByInstance(instanceId);
+    }
+
+    public static boolean removeSession(
+            ServerLevel dungeonLevel,
+            UUID sessionId
+    ) {
+        DungeonSessionProgressBarService.removeSession(sessionId);
+        return DungeonManagerSavedData.get(dungeonLevel).removeSession(sessionId);
     }
 
     public static boolean registerParticipant(
@@ -186,6 +194,39 @@ public final class DungeonSessionManager {
         return changed;
     }
 
+    public static void markPortalEntrySucceeded(
+            ServerLevel dungeonLevel,
+            DungeonSession session,
+            UUID playerId,
+            long gameTime
+    ) {
+        if (session.markPortalEntrySucceeded(playerId, gameTime)) {
+            DungeonManagerSavedData.get(dungeonLevel).markSessionsDirty();
+        }
+    }
+
+    public static boolean unregisterPhysicalParticipant(
+            ServerLevel dungeonLevel,
+            DungeonInstanceId instanceId,
+            UUID playerId
+    ) {
+        DungeonManagerSavedData data = DungeonManagerSavedData.get(dungeonLevel);
+        Optional<DungeonSession> session = data.findSessionByInstance(instanceId);
+
+        if (session.isEmpty()) {
+            return false;
+        }
+
+        boolean changed =
+                session.get().unregisterPhysicalParticipant(playerId);
+
+        if (changed) {
+            data.markSessionsDirty();
+        }
+
+        return changed;
+    }
+
     public static boolean onRegisteredDungeonMobKilled(
             ServerLevel dungeonLevel,
             DungeonInstanceId instanceId,
@@ -221,6 +262,27 @@ public final class DungeonSessionManager {
         return changed;
     }
 
+    public static boolean removeParticipant(
+            ServerLevel dungeonLevel,
+            DungeonInstanceId instanceId,
+            UUID playerId
+    ) {
+        DungeonManagerSavedData data = DungeonManagerSavedData.get(dungeonLevel);
+        Optional<DungeonSession> session = data.findSessionByInstance(instanceId);
+
+        if (session.isEmpty()) {
+            return false;
+        }
+
+        boolean changed = session.get().removeParticipant(playerId);
+
+        if (changed) {
+            data.markSessionsDirty();
+        }
+
+        return changed;
+    }
+
     public static boolean creditEncounterNormalKill(
             ServerLevel dungeonLevel,
             DungeonInstanceId instanceId
@@ -249,6 +311,16 @@ public final class DungeonSessionManager {
         long gameTime = dungeonLevel.getGameTime();
 
         for (DungeonSession session : data.sessions()) {
+            if (session.state() == DungeonSessionState.WAITING_FOR_ENTRY) {
+                tickWaitingForEntry(
+                        dungeonLevel,
+                        data,
+                        session,
+                        gameTime
+                );
+                continue;
+            }
+
             if (!session.state().needsRuntimeTick()) {
                 continue;
             }
@@ -270,10 +342,11 @@ public final class DungeonSessionManager {
             }
 
             /*
-             * Only the starter controls abandonment. Non-starter participants may
-             * leave or disconnect without destroying another player's run.
+             * Only an entered run reaches this branch. Waiting portal sessions are
+             * handled above and never consume the abandonment grace period.
              */
-            if (gameTime - session.lastStarterInsideGameTime() < ABANDON_GRACE_TICKS) {
+            if (gameTime - session.lastStarterInsideGameTime()
+                    < ABANDON_GRACE_TICKS) {
                 if (session.markAbandonPending()) {
                     data.markSessionsDirty();
                 }
@@ -283,6 +356,99 @@ public final class DungeonSessionManager {
 
             abandonAndCleanup(dungeonLevel, session);
         }
+    }
+
+    private static void tickWaitingForEntry(
+            ServerLevel dungeonLevel,
+            DungeonManagerSavedData data,
+            DungeonSession session,
+            long gameTime
+    ) {
+        Optional<DungeonInstance> optionalInstance =
+                data.getInstance(session.instanceId());
+
+        if (optionalInstance.isEmpty()) {
+            if (session.markFailed()) {
+                data.markSessionsDirty();
+            }
+
+            DungeonSessionProgressBarService.removeSession(session.id());
+            return;
+        }
+
+        DungeonInstance instance = optionalInstance.get();
+
+        if (instance.status() != DungeonStatus.ACTIVE) {
+            if (session.markCleaned()) {
+                data.markSessionsDirty();
+            }
+
+            DungeonSessionProgressBarService.removeSession(session.id());
+            return;
+        }
+
+        /*
+         * Defensive self-healing: a successfully registered player proves that
+         * entry happened even if another caller failed to finalize the session
+         * state.
+         */
+        if (!instance.participants().isEmpty()) {
+            if (session.setState(DungeonSessionState.ACTIVE)) {
+                data.markSessionsDirty();
+            }
+
+            return;
+        }
+
+        if (data.hasValidPortalSessionForInstance(
+                session.instanceId(),
+                gameTime
+        )) {
+            return;
+        }
+
+        closeUnenteredSession(
+                dungeonLevel,
+                data,
+                session,
+                instance,
+                gameTime
+        );
+    }
+
+    private static void closeUnenteredSession(
+            ServerLevel dungeonLevel,
+            DungeonManagerSavedData data,
+            DungeonSession session,
+            DungeonInstance instance,
+            long gameTime
+    ) {
+        boolean changed = session.markAbandoned();
+
+        if (instance.setStatus(DungeonStatus.PORTAL_CLOSED)) {
+            changed = true;
+        }
+
+        if (instance.closedGameTime() < 0L) {
+            instance.markClosedAt(gameTime);
+            changed = true;
+        }
+
+        if (changed) {
+            data.markSessionsDirty();
+        }
+
+        cleanupSession(dungeonLevel, session);
+        DungeonRuntimeArtifactCleanupService.cleanupInstanceArtifacts(
+                dungeonLevel,
+                instance.id()
+        );
+
+        ObeliskDepths.LOGGER.debug(
+                "Closed unentered dungeon session after final portal lease ended: session={}, instance={}",
+                session.id(),
+                instance.id()
+        );
     }
 
     public static boolean isInsideSessionArea(
@@ -400,36 +566,11 @@ public final class DungeonSessionManager {
 
         DungeonSession value = session.get();
 
-        if (value.rewardState().chestState() != DungeonRewardChestState.SPAWNED) {
-            return false;
-        }
-
-        if (value.rewardState().chestPos().isPresent()
-                && !value.rewardState().chestPos().get().equals(chestPos)) {
-            return false;
-        }
-
-        /*
-         * Reward distribution is intentionally not party-based. Loot is sprayed
-         * into the world; vanilla pickup rules decide who gets it.
-         *
-         * TODO: Replace this placeholder drop with the real dungeon loot economy.
-         */
-        Containers.dropItemStack(
-                dungeonLevel,
-                chestPos.getX() + 0.5D,
-                chestPos.getY() + 1.0D,
-                chestPos.getZ() + 0.5D,
-                new ItemStack(Items.GOLD_INGOT)
-        );
-
-        boolean changed = value.markRewardChestOpened();
-
-        if (changed) {
-            data.markSessionsDirty();
-        }
-
-        return changed;
+        return DungeonRewardService.tryOpenReward(
+                player,
+                value.instanceId(),
+                chestPos
+        ) == DungeonRewardClaimResult.SUCCESS;
     }
 
     public static int cleanupSessionsForInstance(
@@ -505,7 +646,7 @@ public final class DungeonSessionManager {
         DungeonSessionProgressBarService.removeSession(session.id());
 
         /*
-         * TODO: When entry/exit transport becomes entity-overlap based, evict or
+         * TODO: When dungeon transport is fully entity-overlap based, evict or
          * return remaining participants through that system during abandonment.
          */
         ObeliskDepths.LOGGER.debug(
@@ -520,6 +661,12 @@ public final class DungeonSessionManager {
             ServerLevel dungeonLevel,
             DungeonSession session
     ) {
+        /*
+         * Compatibility-only cleanup for older saved sessions that recorded
+         * spawnedEntityIds before DungeonEncounterDirector became the owner of
+         * controlled mob lifetime. New encounter cleanup must use
+         * DungeonEncounterDirector.cleanupInstance(...), called above.
+         */
         int removed = 0;
 
         for (UUID entityId : session.spawnedEntityIds()) {

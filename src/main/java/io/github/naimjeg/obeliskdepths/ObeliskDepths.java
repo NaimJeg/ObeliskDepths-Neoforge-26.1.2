@@ -52,6 +52,7 @@ public final class ObeliskDepths {
         ModAttachments.register(modEventBus);
         ModDataComponents.register(modEventBus);
         ModMenuTypes.register(modEventBus);
+        ModEntityTypes.register(modEventBus);
         ModRecipeTypes.register(modEventBus);
         ModRecipeSerializers.register(modEventBus);
         ModWorldgen.register(modEventBus);

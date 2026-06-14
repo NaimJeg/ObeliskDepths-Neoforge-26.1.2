@@ -273,12 +273,29 @@ public final class ModBlocks {
 
     public static final DeferredBlock<Block> DUNGEON_LAMP = BLOCKS.register(
             "dungeon_lamp",
-            blockKey -> new Block(baseProperties(blockKey, 1.5F, 6.0F, SoundType.GLASS)
-                    .lightLevel(state -> 12))
+            registryName -> new Block(baseProperties(
+                    registryName,
+                    1.5F,
+                    6.0F,
+                    SoundType.COPPER_BULB
+            ))
     );
 
     public static final DeferredItem<BlockItem> DUNGEON_LAMP_ITEM =
             registerBlockItem(DUNGEON_LAMP);
+
+    public static final DeferredBlock<Block> LIT_DUNGEON_LAMP = BLOCKS.register(
+            "lit_dungeon_lamp",
+            registryName -> new Block(baseProperties(
+                    registryName,
+                    1.5F,
+                    6.0F,
+                    SoundType.COPPER_BULB
+            ).lightLevel(state -> 12))
+    );
+
+    public static final DeferredItem<BlockItem> LIT_DUNGEON_LAMP_ITEM =
+            registerBlockItem(LIT_DUNGEON_LAMP);
 
     // ---------------------------------------------------------------------
     // Shared lists
@@ -301,7 +318,8 @@ public final class ModBlocks {
                     GREAT_SWAMP_MUD,
                     GREAT_SWAMP_DIRT,
                     GREAT_SWAMP_ROOTED_DIRT,
-                    DUNGEON_LAMP
+                    DUNGEON_LAMP,
+                    LIT_DUNGEON_LAMP
             );
 
     /**
@@ -325,7 +343,8 @@ public final class ModBlocks {
                             GREAT_SWAMP_DIRT,
                             GREAT_SWAMP_ROOTED_DIRT,
                             GREAT_SWAMP_TAXODIUM_ROOT_TANGLE,
-                            DUNGEON_LAMP
+                            DUNGEON_LAMP,
+                            LIT_DUNGEON_LAMP
                     ).stream()
             ).toList();
 
@@ -348,7 +367,8 @@ public final class ModBlocks {
                             GREAT_SWAMP_ROOTED_DIRT_ITEM,
                             GREAT_SWAMP_VINE_ITEM,
                             GREAT_SWAMP_TAXODIUM_ROOT_TANGLE_ITEM,
-                            DUNGEON_LAMP_ITEM
+                            DUNGEON_LAMP_ITEM,
+                            LIT_DUNGEON_LAMP_ITEM
                     ).stream()
             ).toList();
 

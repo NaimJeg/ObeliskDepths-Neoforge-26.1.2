@@ -23,7 +23,6 @@ public final class DungeonGraphGenerator {
         builder.createRadialArms();
         builder.connectRings();
         builder.addOptionalBranches();
-        builder.attachExit();
         DungeonGraph graph = builder.buildGraph();
         DungeonGraphValidator.validate(graph);
         return graph;
@@ -49,7 +48,6 @@ public final class DungeonGraphGenerator {
 
         private void createCore() {
             addNode("boss", DungeonRoomType.BOSS);
-            addNode("exit", DungeonRoomType.EXIT);
         }
 
         private void selectEntries() {
@@ -183,8 +181,9 @@ public final class DungeonGraphGenerator {
             int branchCount = choose(CONFIG.minSideBranches(), CONFIG.maxSideBranches());
             List<String> eligibleParents = this.nodes.stream()
                     .map(DungeonGraphNode::id)
-                    .filter(id -> !id.equals("boss") && !id.equals("exit"))
+                    .filter(id -> !id.equals("boss"))
                     .filter(id -> this.nodeTypes.get(id) == DungeonRoomType.COMBAT)
+                    .filter(id -> this.degreeByNode.getOrDefault(id, 0) <= 1)
                     .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
             shuffle(eligibleParents);
             int parentCursor = 0;
@@ -219,10 +218,6 @@ public final class DungeonGraphGenerator {
             }
         }
 
-        private void attachExit() {
-            addEdge("tree_boss_exit", "boss", "exit", DungeonGraphEdgeKind.TREE);
-        }
-
         private DungeonGraph buildGraph() {
             Set<String> entries = new LinkedHashSet<>();
             for (int sector : this.entrySectors) {
@@ -233,7 +228,6 @@ public final class DungeonGraphGenerator {
                     "boss",
                     entries,
                     primaryEntry,
-                    "exit",
                     this.nodes,
                     this.edges
             );
@@ -322,7 +316,6 @@ public final class DungeonGraphGenerator {
 
         private boolean canAcceptEdge(String nodeId) {
             return nodeId.equals("boss")
-                    || nodeId.equals("exit")
                     || this.degreeByNode.getOrDefault(nodeId, 0) < CONFIG.maxOrdinaryDegree();
         }
 

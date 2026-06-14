@@ -1,10 +1,14 @@
 package io.github.naimjeg.obeliskdepths.dungeon.runtime;
 
 import io.github.naimjeg.obeliskdepths.ObeliskDepths;
+import io.github.naimjeg.obeliskdepths.dungeon.correction.DungeonBoundaryCorrectionService;
 import io.github.naimjeg.obeliskdepths.dungeon.entity.DungeonEntityCleanupService;
+import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonStatus;
 import io.github.naimjeg.obeliskdepths.dungeon.lifecycle.DungeonCleanupService;
 import io.github.naimjeg.obeliskdepths.dungeon.presence.DungeonPhysicalPresenceService;
 import io.github.naimjeg.obeliskdepths.dungeon.raid.DungeonRaidTicker;
+import io.github.naimjeg.obeliskdepths.dungeon.reward.DungeonRewardService;
+import io.github.naimjeg.obeliskdepths.dungeon.reward.DungeonRewardStatus;
 import io.github.naimjeg.obeliskdepths.dungeon.session.DungeonSessionManager;
 import io.github.naimjeg.obeliskdepths.dungeon.session.DungeonSessionProgressBarService;
 import io.github.naimjeg.obeliskdepths.dungeon.state.DungeonManagerSavedData;
@@ -62,6 +66,8 @@ public final class DungeonTickHandler {
 
         DungeonSessionManager.tickSessions(level);
         DungeonSessionProgressBarService.tick(level);
+        tickBoundaryCorrection(level);
+        tickRewardPlacement(level);
     }
 
     private static void tickDelayedCleanup(ServerLevel level) {
@@ -70,6 +76,30 @@ public final class DungeonTickHandler {
         }
 
         DungeonCleanupService.cleanupClosedInstancesReadyForCleanup(level);
+    }
+
+    private static void tickBoundaryCorrection(ServerLevel level) {
+        DungeonManagerSavedData data = DungeonManagerSavedData.get(level);
+
+        for (var instance : data.instances()) {
+            if (instance.status() == DungeonStatus.ACTIVE
+                    || instance.status() == DungeonStatus.REWARD_PHASE
+                    || instance.status() == DungeonStatus.FAILED
+                    || instance.status() == DungeonStatus.EXPIRED) {
+                DungeonBoundaryCorrectionService.correctDesyncedPlayers(level, instance);
+            }
+        }
+    }
+
+    private static void tickRewardPlacement(ServerLevel level) {
+        DungeonManagerSavedData data = DungeonManagerSavedData.get(level);
+
+        for (var reward : data.rewards()) {
+            if (reward.status() == DungeonRewardStatus.BOSS_DEFEATED
+                    || reward.status() == DungeonRewardStatus.PLACEMENT_PENDING) {
+                DungeonRewardService.tryPlaceReward(level, reward);
+            }
+        }
     }
 
     private static void tickRaids(ServerLevel level) {

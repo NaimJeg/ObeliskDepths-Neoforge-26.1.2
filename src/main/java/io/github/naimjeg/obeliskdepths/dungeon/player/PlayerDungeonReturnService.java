@@ -3,6 +3,7 @@ package io.github.naimjeg.obeliskdepths.dungeon.player;
 import io.github.naimjeg.obeliskdepths.dungeon.id.DungeonInstanceId;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonInstanceService;
 import io.github.naimjeg.obeliskdepths.dungeon.portal.PortalSessionManager;
+import io.github.naimjeg.obeliskdepths.dungeon.session.DungeonSessionManager;
 import io.github.naimjeg.obeliskdepths.registry.ModDimensions;
 import io.github.naimjeg.obeliskdepths.world.ObeliskDepthsTeleporter;
 import net.minecraft.core.BlockPos;
@@ -60,6 +61,24 @@ public final class PlayerDungeonReturnService {
         DungeonInstanceId instanceId = optionalInstanceId.get();
 
         ServerLevel dungeonLevel = server.getLevel(ModDimensions.OBELISK_DEPTHS_LEVEL);
+
+        DungeonSessionManager.unregisterPhysicalParticipant(
+                dungeonLevel,
+                instanceId,
+                effectivePlayer.getUUID()
+        );
+
+        DungeonInstanceService.removeParticipant(
+                dungeonLevel,
+                instanceId,
+                effectivePlayer.getUUID()
+        );
+
+        PortalSessionManager.removeParticipantFromInstanceSessions(
+                dungeonLevel,
+                instanceId,
+                effectivePlayer.getUUID()
+        );
 
         if (dungeonLevel != null) {
             DungeonInstanceService.removeParticipant(

@@ -45,7 +45,8 @@ public final class DungeonMembership {
      * boolean playerBelongsToRoom(ServerPlayer player, DungeonRoomId roomId)
      * boolean entityBelongsToEncounter(Entity entity, DungeonEncounterId encounterId)
      *
-     * Do not derive room membership solely from position. Room enter/exit may use
-     * position triggers, but persistent room identity should live in room/player/entity state.
+     * Do not derive room membership solely from position. Room transitions may
+     * use position triggers, but persistent room identity should live in
+     * room/player/entity state.
      */
 }

@@ -89,7 +89,14 @@ public final class DungeonTemplateResourceValidator {
                 templateSize,
                 errors
         );
-        validatePortsInsideTemplate("dungeon room", id, room.ports(), templateSize, errors);
+        validatePortsInsideTemplate(
+                "dungeon room",
+                id,
+                room.ports(),
+                room.templateOffset(),
+                templateSize,
+                errors
+        );
         return errors;
     }
 
@@ -112,6 +119,7 @@ public final class DungeonTemplateResourceValidator {
                 "dungeon corridor",
                 id,
                 corridor.ports(),
+                BlockPos.ZERO,
                 templateSize,
                 errors
         );
@@ -214,21 +222,26 @@ public final class DungeonTemplateResourceValidator {
             String kind,
             Identifier id,
             List<RoomConnectorDefinition> ports,
+            BlockPos templateOffset,
             Size templateSize,
             List<String> errors
     ) {
         for (RoomConnectorDefinition port : ports) {
             BlockPos opening = port.openingMin();
 
-            if (opening.getX() < 0
-                    || opening.getY() < 0
-                    || opening.getZ() < 0
-                    || opening.getX() >= templateSize.x()
-                    || opening.getY() >= templateSize.y()
-                    || opening.getZ() >= templateSize.z()) {
+            if (opening.getX() < templateOffset.getX()
+                    || opening.getY() < templateOffset.getY()
+                    || opening.getZ() < templateOffset.getZ()
+                    || opening.getX() >= templateOffset.getX() + templateSize.x()
+                    || opening.getY() >= templateOffset.getY() + templateSize.y()
+                    || opening.getZ() >= templateOffset.getZ() + templateSize.z()) {
                 errors.add(kind + " " + id + " port " + port.id()
-                        + " opening_min " + opening
-                        + " is outside template size " + templateSize);
+                        + " opening_min "
+                        + opening
+                        + " is outside template offset "
+                        + templateOffset
+                        + " size "
+                        + templateSize);
             }
         }
     }

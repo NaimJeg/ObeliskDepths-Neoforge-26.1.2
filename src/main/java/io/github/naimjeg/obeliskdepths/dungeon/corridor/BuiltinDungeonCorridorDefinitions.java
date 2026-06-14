@@ -38,46 +38,46 @@ public final class BuiltinDungeonCorridorDefinitions {
         Map<Identifier, DungeonCorridorDefinition> corridors =
                 new LinkedHashMap<>();
         add(corridors, BuiltinDungeonCorridors.GREAT_SWAMP_STRAIGHT_01,
-                BuiltinDungeonTemplates.BASIC_CORRIDOR_STRAIGHT_01,
+                BuiltinDungeonTemplates.GREAT_SWAMP_CORRIDOR_STRAIGHT_01,
                 straight());
         add(corridors, BuiltinDungeonCorridors.GREAT_SWAMP_STRAIGHT_02,
-                BuiltinDungeonTemplates.BASIC_CORRIDOR_STRAIGHT_02,
+                BuiltinDungeonTemplates.GREAT_SWAMP_CORRIDOR_STRAIGHT_02,
                 straight());
         add(corridors, BuiltinDungeonCorridors.GREAT_SWAMP_STRAIGHT_03,
-                BuiltinDungeonTemplates.BASIC_CORRIDOR_STRAIGHT_03,
+                BuiltinDungeonTemplates.GREAT_SWAMP_CORRIDOR_STRAIGHT_03,
                 straight());
         add(corridors, BuiltinDungeonCorridors.GREAT_SWAMP_STRAIGHT_04,
-                BuiltinDungeonTemplates.BASIC_CORRIDOR_STRAIGHT_04,
+                BuiltinDungeonTemplates.GREAT_SWAMP_CORRIDOR_STRAIGHT_04,
                 straight());
         add(corridors, BuiltinDungeonCorridors.GREAT_SWAMP_STRAIGHT_05,
-                BuiltinDungeonTemplates.BASIC_CORRIDOR_STRAIGHT_05,
+                BuiltinDungeonTemplates.GREAT_SWAMP_CORRIDOR_STRAIGHT_05,
                 straight());
         add(corridors, BuiltinDungeonCorridors.GREAT_SWAMP_STRAIGHT_06,
-                BuiltinDungeonTemplates.BASIC_CORRIDOR_STRAIGHT_06,
+                BuiltinDungeonTemplates.GREAT_SWAMP_CORRIDOR_STRAIGHT_06,
                 straight());
         add(corridors, BuiltinDungeonCorridors.GREAT_SWAMP_STRAIGHT_07,
-                BuiltinDungeonTemplates.BASIC_CORRIDOR_STRAIGHT_07,
+                BuiltinDungeonTemplates.GREAT_SWAMP_CORRIDOR_STRAIGHT_07,
                 straight());
         add(corridors, BuiltinDungeonCorridors.GREAT_SWAMP_STRAIGHT_08,
-                BuiltinDungeonTemplates.BASIC_CORRIDOR_STRAIGHT_08,
+                BuiltinDungeonTemplates.GREAT_SWAMP_CORRIDOR_STRAIGHT_08,
                 straight());
         add(corridors, BuiltinDungeonCorridors.GREAT_SWAMP_STRAIGHT_09,
-                BuiltinDungeonTemplates.BASIC_CORRIDOR_STRAIGHT_09,
+                BuiltinDungeonTemplates.GREAT_SWAMP_CORRIDOR_STRAIGHT_09,
                 straight());
         add(corridors, BuiltinDungeonCorridors.GREAT_SWAMP_STRAIGHT_10,
-                BuiltinDungeonTemplates.BASIC_CORRIDOR_STRAIGHT_10,
+                BuiltinDungeonTemplates.GREAT_SWAMP_CORRIDOR_STRAIGHT_10,
                 straight());
         add(corridors, BuiltinDungeonCorridors.GREAT_SWAMP_CORNER_01,
-                BuiltinDungeonTemplates.BASIC_CORRIDOR_CORNER_01,
+                BuiltinDungeonTemplates.GREAT_SWAMP_CORRIDOR_CORNER_01,
                 corner());
         add(corridors, BuiltinDungeonCorridors.GREAT_SWAMP_CORNER_02,
-                BuiltinDungeonTemplates.BASIC_CORRIDOR_CORNER_02,
+                BuiltinDungeonTemplates.GREAT_SWAMP_CORRIDOR_CORNER_02,
                 corner());
         add(corridors, BuiltinDungeonCorridors.GREAT_SWAMP_TEE_01,
-                BuiltinDungeonTemplates.BASIC_CORRIDOR_TEE_01,
+                BuiltinDungeonTemplates.GREAT_SWAMP_CORRIDOR_TEE_01,
                 tee());
         add(corridors, BuiltinDungeonCorridors.GREAT_SWAMP_TEE_02,
-                BuiltinDungeonTemplates.BASIC_CORRIDOR_TEE_02,
+                BuiltinDungeonTemplates.GREAT_SWAMP_CORRIDOR_TEE_02,
                 tee());
         return Map.copyOf(corridors);
     }

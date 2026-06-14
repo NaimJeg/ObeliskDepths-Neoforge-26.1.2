@@ -179,9 +179,4 @@ public final class DungeonInstanceService {
                 status
         );
     }
-
-    public static int closeEmptyActiveInstances(ServerLevel dungeonLevel) {
-        return DungeonManagerSavedData.get(dungeonLevel)
-                .closeEmptyActiveInstances(dungeonLevel.getGameTime());
-    }
 }

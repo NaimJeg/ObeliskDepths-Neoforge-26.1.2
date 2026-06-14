@@ -20,6 +20,10 @@
           "height": 1
         },
         {
+          "block": "minecraft:water",
+          "height": 1
+        },
+        {
           "block": "minecraft:air",
           "height": 111
         },

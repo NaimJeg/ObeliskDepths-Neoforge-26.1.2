@@ -1,21 +1,35 @@
 package io.github.naimjeg.obeliskdepths.worldgen.structure.piece;
 
+import io.github.naimjeg.obeliskdepths.dungeon.corridor.BuiltinDungeonCorridorDefinitions;
+import io.github.naimjeg.obeliskdepths.dungeon.corridor.BuiltinDungeonCorridors;
+import io.github.naimjeg.obeliskdepths.dungeon.corridor.DungeonCorridorDefinition;
+import io.github.naimjeg.obeliskdepths.dungeon.room.BuiltinDungeonRoomDefinitions;
+import io.github.naimjeg.obeliskdepths.dungeon.room.BuiltinDungeonRooms;
+import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomDefinition;
+import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomRotation;
 import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomType;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.ObeliskDungeonPieceRole;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonConnectorSide;
-import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonCellBox;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonCellPos;
-import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutConstants;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutNode;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonLayoutPlan;
+import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonConnectorShapeType;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonSpatialLayoutValidator;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import net.minecraft.core.BlockPos;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 
 public final class DungeonPiecePlanCompiler {
     private static final int SITE_BOUNDS_BUFFER_BLOCKS = 2;
+    private static final Map<Identifier, DungeonRoomDefinition> ROOM_DEFINITIONS =
+            BuiltinDungeonRoomDefinitions.all();
+    private static final Map<Identifier, DungeonCorridorDefinition> CORRIDOR_DEFINITIONS =
+            BuiltinDungeonCorridorDefinitions.all();
 
     private DungeonPiecePlanCompiler() {
     }
@@ -94,15 +108,75 @@ public final class DungeonPiecePlanCompiler {
             DungeonLayoutNode node,
             String primaryEntryRoomId
     ) {
-        BoundingBox bounds = node.cellBox().toBlockBounds(layoutOrigin);
+        Identifier definitionId = roomDefinitionIdFor(node.type());
+        DungeonRoomDefinition definition = requireRoomDefinition(definitionId);
+        DungeonCellPos pieceOrigin = definitionOriginFor(node, definition);
+        BoundingBox bounds = definition.footprint()
+                .toBlockBounds(layoutOrigin, pieceOrigin);
+        BlockPos templateOrigin = new BlockPos(
+                bounds.minX() + definition.templateOffset().getX(),
+                bounds.minY() + definition.templateOffset().getY(),
+                bounds.minZ() + definition.templateOffset().getZ()
+        );
+        BlockPos anchor = new BlockPos(
+                bounds.minX() + definition.anchor().getX(),
+                bounds.minY() + definition.anchor().getY(),
+                bounds.minZ() + definition.anchor().getZ()
+        );
 
         return new DungeonPieceMetadata(
                 roleFor(node.type()),
                 node.roomId(),
-                node.blockAnchor(layoutOrigin),
+                anchor,
                 bounds,
-                node.roomId().equals(primaryEntryRoomId)
+                node.roomId().equals(primaryEntryRoomId),
+                Optional.of(definitionId),
+                Optional.of(definition.template()),
+                DungeonRoomRotation.NONE,
+                false,
+                templateOrigin,
+                true
         );
+    }
+
+    private static DungeonCellPos definitionOriginFor(
+            DungeonLayoutNode node,
+            DungeonRoomDefinition definition
+    ) {
+        int x = alignedOrigin(
+                node.cellOrigin().x(),
+                node.footprint().widthCells(),
+                definition.footprint().widthCells(),
+                node.connectorSides().contains(DungeonConnectorSide.WEST),
+                node.connectorSides().contains(DungeonConnectorSide.EAST)
+        );
+        int z = alignedOrigin(
+                node.cellOrigin().z(),
+                node.footprint().depthCells(),
+                definition.footprint().depthCells(),
+                node.connectorSides().contains(DungeonConnectorSide.NORTH),
+                node.connectorSides().contains(DungeonConnectorSide.SOUTH)
+        );
+
+        return new DungeonCellPos(x, node.cellOrigin().y(), z);
+    }
+
+    private static int alignedOrigin(
+            int plannedOrigin,
+            int plannedSize,
+            int definitionSize,
+            boolean lowSideConnector,
+            boolean highSideConnector
+    ) {
+        if (highSideConnector && !lowSideConnector) {
+            return plannedOrigin + plannedSize - definitionSize;
+        }
+
+        if (lowSideConnector && !highSideConnector) {
+            return plannedOrigin;
+        }
+
+        return plannedOrigin + Math.floorDiv(plannedSize - definitionSize, 2);
     }
 
     private static List<DungeonPieceMetadata> corridorPieces(
@@ -111,62 +185,40 @@ public final class DungeonPiecePlanCompiler {
     ) {
         List<DungeonPieceMetadata> pieces = new ArrayList<>();
         List<DungeonCellPos> path = corridor.path();
-        int segmentStart = 0;
-        int segmentIndex = 0;
 
-        for (int index = 1; index <= path.size(); index++) {
-            boolean end = index == path.size();
-            boolean directionChanged = false;
+        for (int index = 0; index < path.size(); index++) {
+            DungeonCellPos cell = path.get(index);
+            EnumSet<DungeonConnectorSide> connections =
+                    corridorConnections(corridor, path, index);
+            DungeonConnectorShapeType shape = shapeFor(connections);
+            Identifier definitionId = corridorDefinitionIdFor(shape, index);
+            DungeonCorridorDefinition definition =
+                    requireCorridorDefinition(definitionId);
+            DungeonRoomRotation rotation = corridorRotation(shape, connections);
+            BoundingBox bounds = definition.footprint()
+                    .toBlockBounds(layoutOrigin, cell);
+            BlockPos templateOrigin = new BlockPos(
+                    bounds.minX(),
+                    bounds.minY(),
+                    bounds.minZ()
+            );
 
-            if (!end && index > segmentStart + 1) {
-                DungeonCellPos previous = path.get(index - 1);
-                DungeonCellPos current = path.get(index);
-                DungeonCellPos segmentPrevious = path.get(segmentStart + 1);
-                DungeonCellPos segmentStartPos = path.get(segmentStart);
-                int currentDx = Integer.compare(current.x() - previous.x(), 0);
-                int currentDz = Integer.compare(current.z() - previous.z(), 0);
-                int segmentDx = Integer.compare(segmentPrevious.x() - segmentStartPos.x(), 0);
-                int segmentDz = Integer.compare(segmentPrevious.z() - segmentStartPos.z(), 0);
-                directionChanged = currentDx != segmentDx || currentDz != segmentDz;
-            }
-
-            if (end || directionChanged) {
-                int segmentEnd = directionChanged ? index - 1 : index - 1;
-                BoundingBox bounds = cellSegmentBounds(
-                        layoutOrigin,
-                        path.get(segmentStart),
-                        path.get(segmentEnd)
-                );
-                pieces.add(new DungeonPieceMetadata(
-                        ObeliskDungeonPieceRole.CORRIDOR,
-                        corridor.edgeId() + "_segment_" + segmentIndex++,
-                        bounds.getCenter(),
-                        bounds,
-                        false
-                ));
-                segmentStart = directionChanged ? index : segmentEnd;
-            }
+            pieces.add(new DungeonPieceMetadata(
+                    ObeliskDungeonPieceRole.CORRIDOR,
+                    corridor.edgeId() + "_cell_" + index,
+                    bounds.getCenter(),
+                    bounds,
+                    false,
+                    Optional.of(definitionId),
+                    Optional.of(definition.template()),
+                    rotation,
+                    false,
+                    templateOrigin,
+                    true
+            ));
         }
 
         return pieces;
-    }
-
-    private static BoundingBox cellSegmentBounds(
-            BlockPos layoutOrigin,
-            DungeonCellPos first,
-            DungeonCellPos second
-    ) {
-        int minX = Math.min(first.x(), second.x());
-        int minZ = Math.min(first.z(), second.z());
-        int sizeX = Math.abs(first.x() - second.x()) + 1;
-        int sizeZ = Math.abs(first.z() - second.z()) + 1;
-
-        if (first.x() != second.x() && first.z() != second.z()) {
-            throw new IllegalArgumentException("Routed corridor segment is not axis-aligned: " + first + " -> " + second);
-        }
-
-        return new DungeonCellBox(minX, first.y(), minZ, sizeX, 1, sizeZ)
-                .toBlockBounds(layoutOrigin);
     }
 
     private static void validateCorridorIntersections(
@@ -254,13 +306,184 @@ public final class DungeonPiecePlanCompiler {
                 && first.maxZ() >= second.minZ();
     }
 
+    private static Identifier roomDefinitionIdFor(DungeonRoomType type) {
+        return switch (type) {
+            case START -> BuiltinDungeonRooms.GREAT_SWAMP_START_OPEN_PAVILION;
+            case COMBAT -> BuiltinDungeonRooms.GREAT_SWAMP_COMBAT_OPEN_PAVILION;
+            case TREASURE -> BuiltinDungeonRooms.GREAT_SWAMP_TREASURE_OBELISK_SANCTUM;
+            case BOSS -> BuiltinDungeonRooms.GREAT_SWAMP_BOSS_ALTAR;
+        };
+    }
+
+    private static DungeonRoomDefinition requireRoomDefinition(Identifier id) {
+        DungeonRoomDefinition definition = ROOM_DEFINITIONS.get(id);
+
+        if (definition == null) {
+            throw new IllegalStateException("Missing built-in room definition: " + id);
+        }
+
+        return definition;
+    }
+
+    private static Identifier corridorDefinitionIdFor(
+            DungeonConnectorShapeType shape,
+            int index
+    ) {
+        return switch (shape) {
+            case STRAIGHT -> BuiltinDungeonCorridors.STRAIGHTS.get(
+                    Math.floorMod(index, BuiltinDungeonCorridors.STRAIGHTS.size())
+            );
+            case CORNER -> BuiltinDungeonCorridors.CORNERS.get(
+                    Math.floorMod(index, BuiltinDungeonCorridors.CORNERS.size())
+            );
+            case T -> BuiltinDungeonCorridors.TEES.get(
+                    Math.floorMod(index, BuiltinDungeonCorridors.TEES.size())
+            );
+            default -> BuiltinDungeonCorridors.STRAIGHTS.get(
+                    Math.floorMod(index, BuiltinDungeonCorridors.STRAIGHTS.size())
+            );
+        };
+    }
+
+    private static DungeonCorridorDefinition requireCorridorDefinition(Identifier id) {
+        DungeonCorridorDefinition definition = CORRIDOR_DEFINITIONS.get(id);
+
+        if (definition == null) {
+            throw new IllegalStateException("Missing built-in corridor definition: " + id);
+        }
+
+        return definition;
+    }
+
+    private static EnumSet<DungeonConnectorSide> corridorConnections(
+            DungeonRoutedCorridor corridor,
+            List<DungeonCellPos> path,
+            int index
+    ) {
+        EnumSet<DungeonConnectorSide> connections =
+                EnumSet.noneOf(DungeonConnectorSide.class);
+        DungeonCellPos cell = path.get(index);
+
+        if (index == 0) {
+            connections.add(corridor.fromSide().opposite());
+        } else {
+            connections.add(directionBetween(cell, path.get(index - 1)));
+        }
+
+        if (index == path.size() - 1) {
+            connections.add(corridor.toSide().opposite());
+        } else {
+            connections.add(directionBetween(cell, path.get(index + 1)));
+        }
+
+        return connections;
+    }
+
+    private static DungeonConnectorSide directionBetween(
+            DungeonCellPos from,
+            DungeonCellPos to
+    ) {
+        int dx = Integer.compare(to.x() - from.x(), 0);
+        int dz = Integer.compare(to.z() - from.z(), 0);
+
+        if (Math.abs(to.x() - from.x()) + Math.abs(to.z() - from.z()) != 1
+                || from.y() != to.y()) {
+            throw new IllegalArgumentException(
+                    "Routed corridor cells must be horizontally adjacent: "
+                            + from
+                            + " -> "
+                            + to
+            );
+        }
+
+        if (dx > 0) {
+            return DungeonConnectorSide.EAST;
+        }
+        if (dx < 0) {
+            return DungeonConnectorSide.WEST;
+        }
+        if (dz > 0) {
+            return DungeonConnectorSide.SOUTH;
+        }
+
+        return DungeonConnectorSide.NORTH;
+    }
+
+    private static DungeonConnectorShapeType shapeFor(
+            EnumSet<DungeonConnectorSide> connections
+    ) {
+        if (connections.size() >= 3) {
+            return DungeonConnectorShapeType.T;
+        }
+
+        if (connections.size() == 2) {
+            boolean eastWest = connections.contains(DungeonConnectorSide.EAST)
+                    && connections.contains(DungeonConnectorSide.WEST);
+            boolean northSouth = connections.contains(DungeonConnectorSide.NORTH)
+                    && connections.contains(DungeonConnectorSide.SOUTH);
+            return eastWest || northSouth
+                    ? DungeonConnectorShapeType.STRAIGHT
+                    : DungeonConnectorShapeType.CORNER;
+        }
+
+        return DungeonConnectorShapeType.STRAIGHT;
+    }
+
+    private static DungeonRoomRotation corridorRotation(
+            DungeonConnectorShapeType shape,
+            EnumSet<DungeonConnectorSide> connections
+    ) {
+        return switch (shape) {
+            case STRAIGHT -> connections.contains(DungeonConnectorSide.NORTH)
+                    ? DungeonRoomRotation.CLOCKWISE_90
+                    : DungeonRoomRotation.NONE;
+            case CORNER -> cornerRotation(connections);
+            case T -> teeRotation(connections);
+            default -> DungeonRoomRotation.NONE;
+        };
+    }
+
+    private static DungeonRoomRotation cornerRotation(
+            EnumSet<DungeonConnectorSide> connections
+    ) {
+        if (connections.contains(DungeonConnectorSide.EAST)
+                && connections.contains(DungeonConnectorSide.SOUTH)) {
+            return DungeonRoomRotation.NONE;
+        }
+        if (connections.contains(DungeonConnectorSide.SOUTH)
+                && connections.contains(DungeonConnectorSide.WEST)) {
+            return DungeonRoomRotation.CLOCKWISE_90;
+        }
+        if (connections.contains(DungeonConnectorSide.WEST)
+                && connections.contains(DungeonConnectorSide.NORTH)) {
+            return DungeonRoomRotation.CLOCKWISE_180;
+        }
+
+        return DungeonRoomRotation.COUNTERCLOCKWISE_90;
+    }
+
+    private static DungeonRoomRotation teeRotation(
+            EnumSet<DungeonConnectorSide> connections
+    ) {
+        if (!connections.contains(DungeonConnectorSide.EAST)) {
+            return DungeonRoomRotation.NONE;
+        }
+        if (!connections.contains(DungeonConnectorSide.SOUTH)) {
+            return DungeonRoomRotation.CLOCKWISE_90;
+        }
+        if (!connections.contains(DungeonConnectorSide.WEST)) {
+            return DungeonRoomRotation.CLOCKWISE_180;
+        }
+
+        return DungeonRoomRotation.COUNTERCLOCKWISE_90;
+    }
+
     private static ObeliskDungeonPieceRole roleFor(DungeonRoomType type) {
         return switch (type) {
             case START -> ObeliskDungeonPieceRole.START_ROOM;
             case COMBAT -> ObeliskDungeonPieceRole.COMBAT_ROOM;
             case TREASURE -> ObeliskDungeonPieceRole.TREASURE_ROOM;
             case BOSS -> ObeliskDungeonPieceRole.BOSS_ROOM;
-            case EXIT -> ObeliskDungeonPieceRole.EXIT_ROOM;
         };
     }
 }

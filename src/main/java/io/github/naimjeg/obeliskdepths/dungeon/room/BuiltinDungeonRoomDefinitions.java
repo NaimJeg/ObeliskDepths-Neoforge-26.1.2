@@ -35,6 +35,10 @@ public final class BuiltinDungeonRoomDefinitions {
     public static Map<Identifier, DungeonRoomDefinition> all() {
         Map<Identifier, DungeonRoomDefinition> rooms = new LinkedHashMap<>();
         rooms.put(
+                BuiltinDungeonRooms.GREAT_SWAMP_START_OPEN_PAVILION,
+                greatSwampStartOpenPavilion()
+        );
+        rooms.put(
                 BuiltinDungeonRooms.GREAT_SWAMP_COMBAT_OPEN_PAVILION,
                 greatSwampCombatOpenPavilion()
         );
@@ -42,45 +46,41 @@ public final class BuiltinDungeonRoomDefinitions {
                 BuiltinDungeonRooms.GREAT_SWAMP_TREASURE_OBELISK_SANCTUM,
                 greatSwampTreasureObeliskSanctum()
         );
+        rooms.put(
+                BuiltinDungeonRooms.GREAT_SWAMP_BOSS_ALTAR,
+                greatSwampBossAltar()
+        );
         return Map.copyOf(rooms);
+    }
+
+    public static DungeonRoomDefinition greatSwampStartOpenPavilion() {
+        return new DungeonRoomDefinition(
+                BuiltinDungeonTemplates.GREAT_SWAMP_ROOM_START_OPEN_PAVILION_01,
+                DungeonRoomType.START,
+                openPavilionFootprint(),
+                BlockPos.ZERO,
+                openPavilionAnchor(),
+                openPavilionPorts(),
+                ALL_ROTATIONS,
+                false,
+                Optional.empty(),
+                Optional.empty(),
+                3,
+                Integer.MAX_VALUE,
+                true,
+                true,
+                false
+        );
     }
 
     public static DungeonRoomDefinition greatSwampCombatOpenPavilion() {
         return new DungeonRoomDefinition(
-                BuiltinDungeonTemplates.BASIC_ROOM_OPEN_PAVILION_01,
+                BuiltinDungeonTemplates.GREAT_SWAMP_ROOM_COMBAT_OPEN_PAVILION_01,
                 DungeonRoomType.COMBAT,
-                DungeonRoomFootprint.fromLayers(List.of(
-                        List.of("#"),
-                        List.of("#")
-                )),
+                openPavilionFootprint(),
                 BlockPos.ZERO,
-                new BlockPos(4, 1, 4),
-                List.of(
-                        port(
-                                "north",
-                                new DungeonCellPos(0, 0, 0),
-                                new BlockPos(2, 1, 0),
-                                DungeonConnectorSide.NORTH
-                        ),
-                        port(
-                                "south",
-                                new DungeonCellPos(0, 0, 0),
-                                new BlockPos(2, 1, 7),
-                                DungeonConnectorSide.SOUTH
-                        ),
-                        port(
-                                "west",
-                                new DungeonCellPos(0, 0, 0),
-                                new BlockPos(0, 1, 2),
-                                DungeonConnectorSide.WEST
-                        ),
-                        port(
-                                "east",
-                                new DungeonCellPos(0, 0, 0),
-                                new BlockPos(7, 1, 2),
-                                DungeonConnectorSide.EAST
-                        )
-                ),
+                openPavilionAnchor(),
+                openPavilionPorts(),
                 ALL_ROTATIONS,
                 false,
                 Optional.of(BuiltinDungeonRaids.COMBAT_ROOM),
@@ -95,7 +95,7 @@ public final class BuiltinDungeonRoomDefinitions {
 
     public static DungeonRoomDefinition greatSwampTreasureObeliskSanctum() {
         return new DungeonRoomDefinition(
-                BuiltinDungeonTemplates.BASIC_ROOM_OBELISK_SANCTUM_01,
+                BuiltinDungeonTemplates.GREAT_SWAMP_ROOM_TREASURE_OBELISK_SANCTUM_01,
                 DungeonRoomType.TREASURE,
                 DungeonRoomFootprint.fromLayers(List.of(
                         List.of("####", "####", "####", "####"),
@@ -121,6 +121,72 @@ public final class BuiltinDungeonRoomDefinitions {
                 true,
                 false,
                 false
+        );
+    }
+
+    public static DungeonRoomDefinition greatSwampBossAltar() {
+        return new DungeonRoomDefinition(
+                BuiltinDungeonTemplates.GREAT_SWAMP_ROOM_BOSS_ALTAR_01,
+                DungeonRoomType.BOSS,
+                DungeonRoomFootprint.rectangular(7, 4, 7),
+                new BlockPos(2, 0, 1),
+                // TODO: Replace with authored boss marker once altar.nbt exposes one.
+                new BlockPos(27, 2, 27),
+                List.of(port(
+                        "east_entry",
+                        new DungeonCellPos(6, 0, 3),
+                        new BlockPos(55, 1, 25),
+                        DungeonConnectorSide.EAST
+                )),
+                ALL_ROTATIONS,
+                false,
+                Optional.of(BuiltinDungeonRaids.BOSS_ROOM),
+                Optional.empty(),
+                0,
+                Integer.MAX_VALUE,
+                true,
+                false,
+                false
+        );
+    }
+
+    private static DungeonRoomFootprint openPavilionFootprint() {
+        return DungeonRoomFootprint.fromLayers(List.of(
+                List.of("#"),
+                List.of("#")
+        ));
+    }
+
+    private static BlockPos openPavilionAnchor() {
+        return new BlockPos(4, 1, 4);
+    }
+
+    private static List<RoomConnectorDefinition> openPavilionPorts() {
+        return List.of(
+                port(
+                        "north",
+                        new DungeonCellPos(0, 0, 0),
+                        new BlockPos(2, 1, 0),
+                        DungeonConnectorSide.NORTH
+                ),
+                port(
+                        "south",
+                        new DungeonCellPos(0, 0, 0),
+                        new BlockPos(2, 1, 7),
+                        DungeonConnectorSide.SOUTH
+                ),
+                port(
+                        "west",
+                        new DungeonCellPos(0, 0, 0),
+                        new BlockPos(0, 1, 2),
+                        DungeonConnectorSide.WEST
+                ),
+                port(
+                        "east",
+                        new DungeonCellPos(0, 0, 0),
+                        new BlockPos(7, 1, 2),
+                        DungeonConnectorSide.EAST
+                )
         );
     }
 

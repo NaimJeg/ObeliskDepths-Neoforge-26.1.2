@@ -8,12 +8,14 @@ import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonDifficulty;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonInstance;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonInstanceService;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonStatus;
+import io.github.naimjeg.obeliskdepths.dungeon.lifecycle.DungeonEncounterFailureService;
 import io.github.naimjeg.obeliskdepths.dungeon.raid.BuiltinDungeonRaids;
 import io.github.naimjeg.obeliskdepths.dungeon.raid.DungeonRaidId;
 import io.github.naimjeg.obeliskdepths.dungeon.raid.DungeonRaidInstance;
 import io.github.naimjeg.obeliskdepths.dungeon.raid.DungeonRaidPlayers;
 import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomStatus;
 import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomType;
+import io.github.naimjeg.obeliskdepths.dungeon.reward.DungeonRewardService;
 import io.github.naimjeg.obeliskdepths.dungeon.session.DungeonSession;
 import io.github.naimjeg.obeliskdepths.dungeon.session.DungeonSessionManager;
 import io.github.naimjeg.obeliskdepths.dungeon.session.DungeonSessionProgressBarService;
@@ -46,6 +48,8 @@ public final class DungeonEncounterDirector {
     private static final int MAX_SPAWN_ATTEMPTS_PER_TICK = 8;
     private static final long BASE_RETRY_BACKOFF_TICKS = 40L;
     private static final long MAX_RETRY_BACKOFF_TICKS = 20L * 15L;
+    private static final int MAX_CONSECUTIVE_SPAWN_FAILURES = 10;
+    public static final long MISSING_MOB_RECONCILE_TIMEOUT_TICKS = 20L * 60L;
 
     private DungeonEncounterDirector() {
     }
@@ -100,13 +104,67 @@ public final class DungeonEncounterDirector {
         data.findActiveEncounter(instanceId)
                 .ifPresent(encounter -> {
                     removeTrackedMobs(level, data, encounter, resolution);
-                    encounter.setEncounterPhase(DungeonEncounterPhase.EXPIRED);
+                    encounter.markEncounterExpired();
                     data.markEncounterDirty();
                     data.findSessionByInstance(instanceId)
                             .ifPresent(session ->
                                     DungeonSessionProgressBarService.removeSession(session.id())
                             );
                 });
+    }
+
+    public static boolean failInstance(
+            ServerLevel level,
+            DungeonInstanceId instanceId,
+            DungeonMobResolution resolution
+    ) {
+        DungeonManagerSavedData data = DungeonManagerSavedData.get(level);
+        Optional<DungeonRaidInstance> encounter = data.findEncounter(instanceId);
+
+        if (encounter.isEmpty() || encounter.get().isTerminal()) {
+            return false;
+        }
+
+        failEncounter(level, data, encounter.get(), resolution);
+        return true;
+    }
+
+    public static boolean expireInstance(
+            ServerLevel level,
+            DungeonInstanceId instanceId,
+            DungeonMobResolution resolution
+    ) {
+        DungeonManagerSavedData data = DungeonManagerSavedData.get(level);
+        Optional<DungeonRaidInstance> encounter = data.findEncounter(instanceId);
+
+        if (encounter.isEmpty() || encounter.get().isTerminal()) {
+            return false;
+        }
+
+        expireEncounter(level, data, encounter.get(), resolution);
+        return true;
+    }
+
+    public static boolean reconcileInstanceNow(
+            ServerLevel level,
+            DungeonInstanceId instanceId
+    ) {
+        DungeonManagerSavedData data = DungeonManagerSavedData.get(level);
+        Optional<DungeonInstance> instance = data.getInstance(instanceId);
+
+        if (instance.isEmpty() || instance.get().status() != DungeonStatus.ACTIVE) {
+            return false;
+        }
+
+        Optional<DungeonSite> site = resolveSite(level, data, instance.get());
+        Optional<DungeonRaidInstance> encounter = data.findActiveEncounter(instanceId);
+
+        if (site.isEmpty() || encounter.isEmpty() || !encounter.get().encounterPhase().active()) {
+            return false;
+        }
+
+        reconcilePopulation(level, data, instance.get(), site.get(), encounter.get());
+        return true;
     }
 
     private static void tickInstance(
@@ -132,36 +190,41 @@ public final class DungeonEncounterDirector {
             return;
         }
 
+        Optional<DungeonRaidInstance> existingEncounter = data.findEncounter(instance.id());
+
+        if (existingEncounter.isPresent() && existingEncounter.get().isTerminal()) {
+            return;
+        }
+
+        DungeonEncounterSettings encounterSettings =
+                DungeonEncounterSettingsResolver.resolve(instance.difficulty());
+
         DungeonRaidInstance encounter = data.getOrCreateEncounter(
                 instance.id(),
                 BuiltinDungeonRaids.COMBAT_ROOM,
-                fixedNormalKillQuota(instance.difficulty()),
-                desiredLivingMobCount(instance.difficulty()),
+                encounterSettings.normalKillQuota(),
+                encounterSettings.desiredLivingMobCount(),
                 level.getGameTime()
         );
         if (encounter.initializeEncounterSettings(
-                fixedNormalKillQuota(instance.difficulty()),
-                desiredLivingMobCount(instance.difficulty())
+                encounterSettings.normalKillQuota(),
+                encounterSettings.desiredLivingMobCount()
         )) {
             data.markEncounterDirty();
         }
 
-        if (DungeonSessionManager.initializeEncounterProgress(
-                level,
-                instance.id(),
-                encounter.normalKillQuota()
-        )) {
+        if (migrateLegacySessionProgress(level, data, instance, encounter)) {
             ObeliskDepths.LOGGER.debug(
-                    "Initialized dungeon encounter progress: instance={}, encounter={}, quota={}, desiredLiving={}",
+                    "Migrated legacy dungeon session progress into encounter: instance={}, encounter={}, credited={}, quota={}",
                     instance.id(),
                     encounter.id(),
-                    encounter.normalKillQuota(),
-                    encounter.desiredLivingMobCount()
+                    encounter.creditedNormalKills(),
+                    encounter.normalKillQuota()
             );
         }
 
         if (encounter.encounterPhase() == DungeonEncounterPhase.COMBAT
-                && session.get().progress().isComplete()) {
+                && encounter.normalKillQuotaComplete()) {
             transitionToBoss(level, data, instance, encounter);
             return;
         }
@@ -208,13 +271,11 @@ public final class DungeonEncounterDirector {
             if (role == DungeonEncounterMobRole.NORMAL
                     && encounter.encounterPhase() == DungeonEncounterPhase.COMBAT) {
                 encounter.creditNormalKill();
-                DungeonSessionManager.creditEncounterNormalKill(
-                        level,
-                        encounter.dungeonInstanceId()
-                );
                 data.findSessionByInstance(encounter.dungeonInstanceId())
-                        .filter(session -> session.progress().isComplete())
-                        .flatMap(session -> data.getInstance(encounter.dungeonInstanceId()))
+                        .ifPresent(session -> DungeonSessionProgressBarService.updateSession(level, session));
+                Optional.of(encounter)
+                        .filter(DungeonRaidInstance::normalKillQuotaComplete)
+                        .flatMap(ignored -> data.getInstance(encounter.dungeonInstanceId()))
                         .ifPresent(instance ->
                                 transitionToBoss(level, data, instance, encounter)
                         );
@@ -263,6 +324,19 @@ public final class DungeonEncounterDirector {
                     BASE_RETRY_BACKOFF_TICKS * (encounter.spawnFailureCount() + 1L)
             );
             encounter.recordSpawnFailure(level.getGameTime() + backoff);
+            if (encounter.spawnFailureCount() >= MAX_CONSECUTIVE_SPAWN_FAILURES) {
+                ObeliskDepths.LOGGER.warn(
+                        "Dungeon encounter spawn failed terminally: instance={}, encounter={}, room={}, phase={}, failureCount={}, nextAction=failEncounterAndCleanup",
+                        instance.id(),
+                        encounter.id(),
+                        encounter.roomId().map(Object::toString).orElse("<instance>"),
+                        encounter.encounterPhase().getSerializedName(),
+                        encounter.spawnFailureCount()
+                );
+                failEncounter(level, data, encounter, DungeonMobResolution.INVALIDATED);
+                return;
+            }
+
             ObeliskDepths.LOGGER.debug(
                     "Dungeon encounter spawn deferred: instance={}, encounter={}, phase={}, failureCount={}, nextRetry={}",
                     instance.id(),
@@ -286,6 +360,25 @@ public final class DungeonEncounterDirector {
         for (UUID entityId : List.copyOf(encounter.trackedMobIds())) {
             Entity entity = level.getEntity(entityId);
 
+            if (entity == null) {
+                Optional<Long> missingSince = encounter.missingSinceGameTime(entityId);
+
+                if (missingSince.isEmpty()) {
+                    encounter.markMobTemporarilyMissing(entityId, level.getGameTime());
+                    living++;
+                    continue;
+                }
+
+                if (level.getGameTime() - missingSince.get()
+                        < MISSING_MOB_RECONCILE_TIMEOUT_TICKS) {
+                    living++;
+                    continue;
+                }
+
+                encounter.resolveMob(entityId);
+                continue;
+            }
+
             if (!(entity instanceof Mob) || !entity.isAlive()) {
                 encounter.resolveMob(entityId);
                 continue;
@@ -298,10 +391,13 @@ public final class DungeonEncounterDirector {
                     || !entityData.get().instanceId().get().equals(encounter.dungeonInstanceId())
                     || entityData.get().raidId().isEmpty()
                     || !entityData.get().raidId().get().equals(encounter.id())) {
+                DungeonEntityTracker.clear(entity);
+                entity.discard();
                 encounter.resolveMob(entityId);
                 continue;
             }
 
+            encounter.clearMissingMob(entityId);
             living++;
         }
 
@@ -372,7 +468,6 @@ public final class DungeonEncounterDirector {
         return site.rooms()
                 .stream()
                 .filter(room -> room.type() != DungeonRoomType.START)
-                .filter(room -> room.type() != DungeonRoomType.EXIT)
                 .filter(room -> room.type() != DungeonRoomType.BOSS)
                 .sorted(Comparator.comparing(room -> room.id().value()))
                 .toList();
@@ -435,7 +530,7 @@ public final class DungeonEncounterDirector {
             return;
         }
 
-        encounter.setEncounterPhase(DungeonEncounterPhase.COMPLETE);
+        encounter.markEncounterComplete();
         removeTrackedMobs(level, data, encounter, DungeonMobResolution.CLEANED);
 
         for (var roomState : data.roomStates(encounter.dungeonInstanceId())) {
@@ -453,6 +548,7 @@ public final class DungeonEncounterDirector {
                 encounter.dungeonInstanceId(),
                 Optional.empty()
         );
+        DungeonRewardService.onBossDefeated(level, encounter.dungeonInstanceId());
         DungeonInstanceService.setStatus(
                 level,
                 encounter.dungeonInstanceId(),
@@ -482,21 +578,70 @@ public final class DungeonEncounterDirector {
         data.markEncounterDirty();
     }
 
+    private static void expireEncounter(
+            ServerLevel level,
+            DungeonManagerSavedData data,
+            DungeonRaidInstance encounter,
+            DungeonMobResolution resolution
+    ) {
+        removeTrackedMobs(level, data, encounter, resolution);
+        encounter.markEncounterExpired();
+        data.findSessionByInstance(encounter.dungeonInstanceId())
+                .ifPresent(session ->
+                        DungeonSessionProgressBarService.removeSession(session.id())
+                );
+        data.markEncounterDirty();
+    }
+
+    private static void failEncounter(
+            ServerLevel level,
+            DungeonManagerSavedData data,
+            DungeonRaidInstance encounter,
+            DungeonMobResolution resolution
+    ) {
+        removeTrackedMobs(level, data, encounter, resolution);
+        DungeonEncounterFailureService.failInstanceForEncounter(
+                level,
+                data,
+                encounter,
+                "encounter_spawn_or_reconciliation_failure"
+        );
+    }
+
     private static void removeTrackedMobs(
             ServerLevel level,
             DungeonManagerSavedData data,
             DungeonRaidInstance encounter,
             DungeonMobResolution resolution
     ) {
+        int removed = 0;
+        int resolved = 0;
+
         for (UUID entityId : List.copyOf(encounter.trackedMobIds())) {
             Entity entity = level.getEntity(entityId);
 
             if (entity != null) {
                 DungeonEntityTracker.clear(entity);
                 entity.discard();
+                removed++;
+            } else {
+                encounter.markCleanupPending(entityId);
             }
 
-            encounter.resolveMob(entityId);
+            if (encounter.resolveMob(entityId)) {
+                resolved++;
+            }
+        }
+
+        if (removed > 0 || resolved > 0) {
+            ObeliskDepths.LOGGER.debug(
+                    "Dungeon encounter removed tracked mobs: instance={}, encounter={}, resolution={}, removed={}, resolved={}",
+                    encounter.dungeonInstanceId(),
+                    encounter.id(),
+                    resolution,
+                    removed,
+                    resolved
+            );
         }
 
         data.markEncounterDirty();
@@ -518,18 +663,35 @@ public final class DungeonEncounterDirector {
         return data.getSiteSnapshot(instance.siteKey());
     }
 
+    private static boolean migrateLegacySessionProgress(
+            ServerLevel level,
+            DungeonManagerSavedData data,
+            DungeonInstance instance,
+            DungeonRaidInstance encounter
+    ) {
+        Optional<DungeonSession> session = data.findSessionByInstance(instance.id());
+
+        if (session.isEmpty()) {
+            return false;
+        }
+
+        boolean changed = encounter.migrateCreditedNormalKills(
+                session.get().progress().clampedCurrentKillScore()
+        );
+
+        if (changed) {
+            data.markEncounterDirty();
+            DungeonSessionProgressBarService.updateSession(level, session.get());
+        }
+
+        return changed;
+    }
+
     public static int fixedNormalKillQuota(DungeonDifficulty difficulty) {
-        int tierBonus = Math.max(0, difficulty.tier()) * 2;
-        int amountBonus = Math.max(0, Math.round(difficulty.amountIntensity() * 3.0F));
-        return 12 + tierBonus + amountBonus;
+        return DungeonEncounterSettingsResolver.fixedNormalKillQuota(difficulty);
     }
 
     public static int desiredLivingMobCount(DungeonDifficulty difficulty) {
-        int tierBonus = Math.min(3, Math.max(0, difficulty.tier() / 2));
-        int amountBonus = Math.min(
-                2,
-                Math.max(0, Math.round(difficulty.amountIntensity()))
-        );
-        return Math.max(1, 3 + tierBonus + amountBonus);
+        return DungeonEncounterSettingsResolver.desiredLivingMobCount(difficulty);
     }
 }

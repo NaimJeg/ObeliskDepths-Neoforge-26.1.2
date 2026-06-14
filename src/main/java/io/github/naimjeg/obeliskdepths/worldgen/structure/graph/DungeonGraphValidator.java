@@ -26,7 +26,6 @@ public final class DungeonGraphValidator {
         validateLoops(graph);
         DungeonGraphAnalysis analysis = DungeonGraphAnalyzer.analyze(graph);
         validateEntryDistribution(graph, analysis);
-        validateExit(graph);
         validateProgressionQuality(graph, analysis);
     }
 
@@ -46,8 +45,6 @@ public final class DungeonGraphValidator {
     private static void validateRequiredNodes(DungeonGraph graph) {
         require(countType(graph, DungeonRoomType.BOSS) == 1,
                 "Dungeon graph must contain exactly one BOSS node");
-        require(countType(graph, DungeonRoomType.EXIT) == 1,
-                "Dungeon graph must contain exactly one EXIT node");
         require(countType(graph, DungeonRoomType.START) >= 2,
                 "Dungeon graph must contain at least two START nodes");
     }
@@ -99,9 +96,6 @@ public final class DungeonGraphValidator {
         }
 
         for (DungeonGraphEdge edge : graph.treeEdges()) {
-            if (edge.targetNodeId().equals(graph.exitNodeId())) {
-                continue;
-            }
             require(normalNodeIds.contains(edge.sourceNodeId()) && normalNodeIds.contains(edge.targetNodeId()),
                     "TREE edge in radial tree must connect normal dungeon nodes: " + edge.id());
             incomingTreeParents.put(edge.targetNodeId(), incomingTreeParents.get(edge.targetNodeId()) + 1);
@@ -147,8 +141,6 @@ public final class DungeonGraphValidator {
 
     private static void validateLoops(DungeonGraph graph) {
         for (DungeonGraphEdge loop : graph.loopEdges()) {
-            require(!loop.sourceNodeId().equals(graph.exitNodeId()) && !loop.targetNodeId().equals(graph.exitNodeId()),
-                    "LOOP edge must not connect EXIT: " + loop.id());
             require(!graph.containsPhysicalConnection(loop.sourceNodeId(), loop.targetNodeId(), DungeonGraphEdgeKind.TREE),
                     "LOOP edge duplicates TREE physical connection: " + loop.id());
         }
@@ -181,21 +173,6 @@ public final class DungeonGraphValidator {
         }
     }
 
-    private static void validateExit(DungeonGraph graph) {
-        DungeonGraphNode exit = graph.requireNode(graph.exitNodeId());
-        require(exit.type() == DungeonRoomType.EXIT,
-                "Graph exitNodeId must point to EXIT node: " + graph.exitNodeId());
-        require(!graph.entryNodeIds().contains(graph.exitNodeId()),
-                "EXIT must not be an entry node: " + graph.exitNodeId());
-        require(graph.incidentEdges(graph.exitNodeId()).size() == 1,
-                "EXIT must have exactly one edge attached to BOSS: " + graph.exitNodeId());
-        DungeonGraphEdge edge = graph.incidentEdges(graph.exitNodeId()).get(0);
-        require(edge.kind() == DungeonGraphEdgeKind.TREE
-                        && edge.sourceNodeId().equals(graph.rootNodeId())
-                        && edge.targetNodeId().equals(graph.exitNodeId()),
-                "EXIT must be attached by BOSS -> EXIT TREE edge: " + edge.id());
-    }
-
     private static void validateProgressionQuality(
             DungeonGraph graph,
             DungeonGraphAnalysis analysis
@@ -207,7 +184,7 @@ public final class DungeonGraphValidator {
 
         for (DungeonGraphNode node : graph.nodes()) {
             DungeonNodeAnalysis nodeAnalysis = analysis.requireNode(node.id());
-            if (!node.id().equals(graph.rootNodeId()) && !node.id().equals(graph.exitNodeId())) {
+            if (!node.id().equals(graph.rootNodeId())) {
                 require(nodeAnalysis.totalDegree() <= config.maxOrdinaryDegree(),
                         "Ordinary node exceeds max degree: "
                                 + node.id() + " degree=" + nodeAnalysis.totalDegree());
@@ -236,7 +213,7 @@ public final class DungeonGraphValidator {
                 continue;
             }
             for (DungeonGraphEdge edge : graph.treeEdges()) {
-                if (edge.sourceNodeId().equals(current) && !edge.targetNodeId().equals(graph.exitNodeId())) {
+                if (edge.sourceNodeId().equals(current)) {
                     queue.add(edge.targetNodeId());
                 }
             }
@@ -248,9 +225,7 @@ public final class DungeonGraphValidator {
     private static Set<String> normalNodeIds(DungeonGraph graph) {
         Set<String> result = new HashSet<>();
         for (DungeonGraphNode node : graph.nodes()) {
-            if (!node.id().equals(graph.exitNodeId())) {
-                result.add(node.id());
-            }
+            result.add(node.id());
         }
         return result;
     }

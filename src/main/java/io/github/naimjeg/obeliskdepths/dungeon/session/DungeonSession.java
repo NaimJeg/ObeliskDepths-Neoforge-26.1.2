@@ -120,22 +120,57 @@ public final class DungeonSession {
         this.participants.add(starterPlayerId);
     }
 
-    public static DungeonSession create(
+    public static DungeonSession createForPortal(
             DungeonInstance instance,
             UUID starterPlayerId,
             DungeonAccessMode accessMode,
             boolean tributeBonusActive,
             long gameTime
     ) {
+        return createWithState(
+                instance,
+                starterPlayerId,
+                accessMode,
+                tributeBonusActive,
+                gameTime,
+                DungeonSessionState.WAITING_FOR_ENTRY
+        );
+    }
+
+    public static DungeonSession createActive(
+            DungeonInstance instance,
+            UUID starterPlayerId,
+            DungeonAccessMode accessMode,
+            boolean tributeBonusActive,
+            long gameTime
+    ) {
+        return createWithState(
+                instance,
+                starterPlayerId,
+                accessMode,
+                tributeBonusActive,
+                gameTime,
+                DungeonSessionState.ACTIVE
+        );
+    }
+
+    private static DungeonSession createWithState(
+            DungeonInstance instance,
+            UUID starterPlayerId,
+            DungeonAccessMode accessMode,
+            boolean tributeBonusActive,
+            long gameTime,
+            DungeonSessionState initialState
+    ) {
         return new DungeonSession(
                 UUID.randomUUID(),
                 instance.id(),
                 starterPlayerId,
                 instance.siteKey(),
-                DungeonSessionState.ACTIVE,
+                initialState,
                 accessMode,
                 Set.of(starterPlayerId),
-                Set.of(starterPlayerId),
+                Set.of(),
                 Set.of(),
                 DungeonKillProgress.empty(),
                 DungeonRewardState.empty(),
@@ -205,8 +240,44 @@ public final class DungeonSession {
         return this.participants.add(playerId);
     }
 
+    public boolean removeParticipant(UUID playerId) {
+        if (this.starterPlayerId.equals(playerId)) {
+            return false;
+        }
+
+        this.physicalParticipants.remove(playerId);
+        return this.participants.remove(playerId);
+    }
+
     public boolean registerPhysicalParticipant(UUID playerId) {
         return this.physicalParticipants.add(playerId);
+    }
+
+    public boolean unregisterPhysicalParticipant(UUID playerId) {
+        return this.physicalParticipants.remove(playerId);
+    }
+
+    public boolean markPortalEntrySucceeded(
+            UUID playerId,
+            long gameTime
+    ) {
+        if (!this.state.acceptsPortalEntry()) {
+            return false;
+        }
+
+        boolean changed = this.participants.add(playerId);
+        changed |= this.physicalParticipants.add(playerId);
+
+        if (this.state == DungeonSessionState.WAITING_FOR_ENTRY) {
+            this.state = DungeonSessionState.ACTIVE;
+            changed = true;
+        }
+
+        if (this.starterPlayerId.equals(playerId)) {
+            changed |= markStarterInside(gameTime);
+        }
+
+        return changed;
     }
 
     public boolean isParticipant(UUID playerId) {
@@ -284,6 +355,17 @@ public final class DungeonSession {
         return changed;
     }
 
+    public boolean markFailed() {
+        boolean changed = setState(DungeonSessionState.FAILED);
+
+        if (this.tributeBonusActive) {
+            this.tributeBonusActive = false;
+            changed = true;
+        }
+
+        return changed;
+    }
+
     public boolean initializeFixedKillQuota(int requiredKillScore) {
         if (this.progress.requiredKillScore() == requiredKillScore) {
             return false;
@@ -298,6 +380,11 @@ public final class DungeonSession {
     }
 
     public boolean creditNormalCombatKill(int killScore) {
+        /*
+         * Compatibility only. DungeonRaidInstance is the authoritative source
+         * for live encounter progress; this field remains serialized so older
+         * saves can migrate their highest compatible progress into the encounter.
+         */
         DungeonKillProgress next = this.progress.withAddedKillScore(killScore);
 
         if (next.equals(this.progress)) {
@@ -326,7 +413,8 @@ public final class DungeonSession {
     }
 
     public boolean markRewardChestOpened() {
-        if (this.rewardState.chestState() != DungeonRewardChestState.SPAWNED) {
+        if (this.rewardState.chestState() != DungeonRewardChestState.AVAILABLE
+                && this.rewardState.chestState() != DungeonRewardChestState.SPAWNED) {
             return false;
         }
 

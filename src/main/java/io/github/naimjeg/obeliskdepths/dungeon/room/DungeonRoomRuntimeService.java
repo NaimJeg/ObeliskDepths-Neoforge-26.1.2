@@ -1,6 +1,7 @@
 // filename: DungeonRoomRuntimeService.java
 package io.github.naimjeg.obeliskdepths.dungeon.room;
 
+import io.github.naimjeg.obeliskdepths.dungeon.id.DungeonInstanceId;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonInstance;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonStatus;
 import io.github.naimjeg.obeliskdepths.dungeon.player.PlayerDungeonTracker;
@@ -17,6 +18,24 @@ import java.util.Optional;
 
 public final class DungeonRoomRuntimeService {
     private DungeonRoomRuntimeService() {
+    }
+
+    public static boolean markRoomClearedForDebug(
+            ServerLevel dungeonLevel,
+            DungeonInstanceId instanceId,
+            DungeonRoomId roomId
+    ) {
+        DungeonManagerSavedData data = DungeonManagerSavedData.get(dungeonLevel);
+
+        if (data.getRoomState(instanceId, roomId).isEmpty()) {
+            return false;
+        }
+
+        return data.setRoomStatus(
+                instanceId,
+                roomId,
+                DungeonRoomStatus.CLEARED
+        );
     }
 
     public static void tickRooms(ServerLevel dungeonLevel) {

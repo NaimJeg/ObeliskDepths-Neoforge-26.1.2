@@ -45,8 +45,8 @@ public final class DungeonThemeDefinitionValidator {
         if (theme.enabled()) {
             requirePool(theme, DungeonRoomType.START, errors);
             requirePool(theme, DungeonRoomType.COMBAT, errors);
+            requirePool(theme, DungeonRoomType.TREASURE, errors);
             requirePool(theme, DungeonRoomType.BOSS, errors);
-            requirePool(theme, DungeonRoomType.EXIT, errors);
         }
 
         return List.copyOf(errors);

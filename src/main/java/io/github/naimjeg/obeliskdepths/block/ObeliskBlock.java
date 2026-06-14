@@ -1,6 +1,7 @@
 package io.github.naimjeg.obeliskdepths.block;
 
 import com.mojang.serialization.MapCodec;
+import io.github.naimjeg.obeliskdepths.dungeon.portal.DungeonPortalEntityService;
 import io.github.naimjeg.obeliskdepths.dungeon.interaction.ObeliskInteractionHandler;
 import io.github.naimjeg.obeliskdepths.menu.ObeliskPortalMenu;
 import io.github.naimjeg.obeliskdepths.registry.ModDimensions;
@@ -18,6 +19,7 @@ import net.minecraft.world.inventory.ContainerLevelAccess;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.level.ScheduledTickAccess;
 import net.minecraft.world.level.block.Block;
@@ -114,6 +116,31 @@ public class ObeliskBlock extends Block {
         ));
 
         return InteractionResult.SUCCESS_SERVER;
+    }
+
+    @Override
+    public void destroy(
+            LevelAccessor level,
+            BlockPos pos,
+            BlockState state
+    ) {
+        if (level instanceof ServerLevel sourceLevel
+                && !sourceLevel.dimension().equals(ModDimensions.OBELISK_DEPTHS_LEVEL)
+                && state.hasProperty(PART)) {
+            ServerLevel dungeonLevel = sourceLevel.getServer()
+                    .getLevel(ModDimensions.OBELISK_DEPTHS_LEVEL);
+
+            if (dungeonLevel != null) {
+                DungeonPortalEntityService.closeSessionsForSourceObelisk(
+                        sourceLevel,
+                        dungeonLevel,
+                        sourceLevel.dimension(),
+                        this.getBottomPos(pos, state)
+                );
+            }
+        }
+
+        super.destroy(level, pos, state);
     }
 
     @Override

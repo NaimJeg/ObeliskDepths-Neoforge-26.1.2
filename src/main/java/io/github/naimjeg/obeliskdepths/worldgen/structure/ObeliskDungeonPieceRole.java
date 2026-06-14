@@ -8,7 +8,6 @@ public enum ObeliskDungeonPieceRole {
     COMBAT_ROOM("combat", DungeonRoomType.COMBAT),
     TREASURE_ROOM("treasure", DungeonRoomType.TREASURE),
     BOSS_ROOM("boss", DungeonRoomType.BOSS),
-    EXIT_ROOM("exit", DungeonRoomType.EXIT),
     CORRIDOR("corridor", null);
 
     private final String serializedName;

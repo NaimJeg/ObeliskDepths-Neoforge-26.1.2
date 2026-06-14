@@ -30,9 +30,21 @@ public final class BuiltinDungeonThemeDefinitions {
     public static DungeonThemeDefinition greatSwamp() {
         EnumMap<DungeonRoomType, List<WeightedDungeonRoom>> roomPools =
                 new EnumMap<>(DungeonRoomType.class);
+        roomPools.put(DungeonRoomType.START, List.of(
+                new WeightedDungeonRoom(
+                        BuiltinDungeonRooms.GREAT_SWAMP_START_OPEN_PAVILION,
+                        1
+                )
+        ));
         roomPools.put(DungeonRoomType.COMBAT, List.of(
                 new WeightedDungeonRoom(
                         BuiltinDungeonRooms.GREAT_SWAMP_COMBAT_OPEN_PAVILION,
+                        1
+                )
+        ));
+        roomPools.put(DungeonRoomType.BOSS, List.of(
+                new WeightedDungeonRoom(
+                        BuiltinDungeonRooms.GREAT_SWAMP_BOSS_ALTAR,
                         1
                 )
         ));
@@ -63,7 +75,7 @@ public final class BuiltinDungeonThemeDefinitions {
                 roomPools,
                 corridorPools,
                 Optional.empty(),
-                false
+                true
         );
     }
 

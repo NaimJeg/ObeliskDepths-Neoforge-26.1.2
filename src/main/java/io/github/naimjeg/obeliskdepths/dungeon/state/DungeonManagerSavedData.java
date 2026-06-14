@@ -11,6 +11,10 @@ import io.github.naimjeg.obeliskdepths.dungeon.portal.DungeonAccessMode;
 import io.github.naimjeg.obeliskdepths.dungeon.portal.PortalSession;
 import io.github.naimjeg.obeliskdepths.dungeon.raid.DungeonRaidId;
 import io.github.naimjeg.obeliskdepths.dungeon.raid.DungeonRaidInstance;
+import io.github.naimjeg.obeliskdepths.dungeon.artifact.DungeonRuntimeArtifactRecord;
+import io.github.naimjeg.obeliskdepths.dungeon.artifact.DungeonRuntimeArtifactType;
+import io.github.naimjeg.obeliskdepths.dungeon.reward.DungeonRewardId;
+import io.github.naimjeg.obeliskdepths.dungeon.reward.DungeonRewardRecord;
 import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomId;
 import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomState;
 import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomStatus;
@@ -25,7 +29,9 @@ import io.github.naimjeg.obeliskdepths.dungeon.territory.DungeonTerritory;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
 import net.minecraft.util.datafix.DataFixTypes;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.saveddata.SavedData;
@@ -59,6 +65,8 @@ public final class DungeonManagerSavedData extends SavedData {
             Identifier.fromNamespaceAndPath(ObeliskDepths.MOD_ID, "dungeons");
 
     private final Map<PortalSessionId, PortalSession> portalSessions = new HashMap<>();
+    private final Map<DungeonRewardId, DungeonRewardRecord> rewards = new HashMap<>();
+    private final List<DungeonRuntimeArtifactRecord> runtimeArtifacts = new ArrayList<>();
 
     public static final Codec<DungeonManagerSavedData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             DungeonInstance.CODEC.listOf()
@@ -84,7 +92,13 @@ public final class DungeonManagerSavedData extends SavedData {
                     .forGetter(data -> List.copyOf(data.siteRecords.values())),
             DungeonSite.CODEC.listOf()
                     .optionalFieldOf("site_snapshots", List.of())
-                    .forGetter(data -> List.copyOf(data.siteSnapshots.values()))
+                    .forGetter(data -> List.copyOf(data.siteSnapshots.values())),
+            DungeonRewardRecord.CODEC.listOf()
+                    .optionalFieldOf("rewards", List.of())
+                    .forGetter(data -> List.copyOf(data.rewards.values())),
+            DungeonRuntimeArtifactRecord.CODEC.listOf()
+                    .optionalFieldOf("runtime_artifacts", List.of())
+                    .forGetter(data -> List.copyOf(data.runtimeArtifacts))
     ).apply(instance, DungeonManagerSavedData::new));
 
     public static final SavedDataType<DungeonManagerSavedData> TYPE =
@@ -111,7 +125,9 @@ public final class DungeonManagerSavedData extends SavedData {
             List<DungeonSession> sessions,
             List<DungeonRoomState> roomStates,
             List<DungeonSiteRecord> siteRecords,
-            List<DungeonSite> siteSnapshots
+            List<DungeonSite> siteSnapshots,
+            List<DungeonRewardRecord> rewards,
+            List<DungeonRuntimeArtifactRecord> runtimeArtifacts
     ) {
         for (DungeonInstance instance : instances) {
             this.instances.put(instance.id(), instance);
@@ -135,6 +151,8 @@ public final class DungeonManagerSavedData extends SavedData {
             this.sessions.put(session.id(), session);
         }
 
+        int removedLegacyPortalSessions = 0;
+
         for (DungeonSiteRecord record : siteRecords) {
             this.siteRecords.put(record.siteKey(), record);
 
@@ -149,7 +167,31 @@ public final class DungeonManagerSavedData extends SavedData {
             this.siteSnapshots.put(siteSnapshot.key(), siteSnapshot);
         }
 
+        for (DungeonRewardRecord reward : rewards) {
+            this.rewards.put(reward.rewardId(), reward);
+        }
+
+        this.runtimeArtifacts.addAll(runtimeArtifacts);
+
         this.roomStates.load(roomStates);
+
+        Iterator<PortalSession> portalIterator = this.portalSessions.values().iterator();
+
+        while (portalIterator.hasNext()) {
+            PortalSession session = portalIterator.next();
+
+            if (!session.hasValidSourceIdentity()) {
+                portalIterator.remove();
+                removedLegacyPortalSessions++;
+            }
+        }
+
+        if (removedLegacyPortalSessions > 0) {
+            ObeliskDepths.LOGGER.warn(
+                    "Removed {} stale legacy portal sessions without source dimension or portal anchor identity.",
+                    removedLegacyPortalSessions
+            );
+        }
     }
 
     public static DungeonManagerSavedData get(ServerLevel level) {
@@ -168,6 +210,16 @@ public final class DungeonManagerSavedData extends SavedData {
 
     public Optional<DungeonSession> getSession(UUID id) {
         return Optional.ofNullable(this.sessions.get(id));
+    }
+
+    public boolean removeSession(UUID id) {
+        boolean changed = this.sessions.remove(id) != null;
+
+        if (changed) {
+            this.setDirty();
+        }
+
+        return changed;
     }
 
     public Optional<DungeonSession> findSessionByInstance(DungeonInstanceId instanceId) {
@@ -328,23 +380,51 @@ public final class DungeonManagerSavedData extends SavedData {
         return changed;
     }
 
+    public boolean failInstance(
+            DungeonInstanceId id,
+            long gameTime
+    ) {
+        DungeonInstance instance = this.instances.get(id);
+
+        if (instance == null) {
+            return false;
+        }
+
+        boolean changed = instance.setStatus(DungeonStatus.FAILED);
+
+        if (instance.closedGameTime() < 0L) {
+            instance.markClosedAt(gameTime);
+            changed = true;
+        }
+
+        if (changed) {
+            this.setDirty();
+        }
+
+        return changed;
+    }
+
     public void tick(ServerLevel level) {
         long gameTime = level.getGameTime();
 
         this.purgeExpiredPortalSessions(gameTime);
         this.removePortalSessionsForInactiveInstances();
-        this.closeEmptyActiveInstances(gameTime);
 
-        // Future lifecycle updates:
-        // - expire old portal_closed instances
-        // - remove terminal raids
-        // - room-triggered encounter state updates
+        /*
+         * Do not infer instance lifetime from DungeonInstance participants.
+         *
+         * DungeonSessionManager owns:
+         * - pre-entry closure after the final portal lease ends;
+         * - entered-run abandonment and grace-period handling.
+         */
     }
 
     public PortalSession createPortalSession(
             DungeonInstanceId instanceId,
             UUID opener,
+            ResourceKey<Level> sourceDimension,
             BlockPos obeliskPos,
+            BlockPos portalAnchorPos,
             DungeonAccessMode accessMode,
             long currentGameTime
     ) {
@@ -356,7 +436,9 @@ public final class DungeonManagerSavedData extends SavedData {
                 PortalSessionId.create(),
                 instanceId,
                 opener,
+                sourceDimension,
                 obeliskPos,
+                portalAnchorPos,
                 accessMode,
                 currentGameTime + durationTicks
         );
@@ -371,7 +453,23 @@ public final class DungeonManagerSavedData extends SavedData {
         return Optional.ofNullable(this.portalSessions.get(id));
     }
 
+    public Collection<PortalSession> portalSessions() {
+        return List.copyOf(this.portalSessions.values());
+    }
+
+    public boolean hasValidPortalSessionForInstance(
+            DungeonInstanceId instanceId,
+            long gameTime
+    ) {
+        return this.portalSessions.values()
+                .stream()
+                .filter(PortalSession::hasValidSourceIdentity)
+                .filter(session -> session.instanceId().equals(instanceId))
+                .anyMatch(session -> !session.isExpired(gameTime));
+    }
+
     public Optional<PortalSession> findActivePartyOpenSession(
+            ResourceKey<Level> sourceDimension,
             BlockPos obeliskPos,
             long gameTime
     ) {
@@ -380,7 +478,9 @@ public final class DungeonManagerSavedData extends SavedData {
 
         return this.portalSessions.values().stream()
                 .filter(session -> session.accessMode() == DungeonAccessMode.PARTY_OPEN)
+                .filter(PortalSession::hasValidSourceIdentity)
                 .filter(session -> !session.isExpired(gameTime))
+                .filter(session -> session.sourceDimension().equals(sourceDimension))
                 .filter(session -> session.obeliskPos().equals(obeliskPos))
                 .filter(session -> {
                     DungeonInstance instance = this.instances.get(session.instanceId());
@@ -389,6 +489,31 @@ public final class DungeonManagerSavedData extends SavedData {
                             && instance.status() == DungeonStatus.ACTIVE;
                 })
                 .findFirst();
+    }
+
+    public int removePortalSessionsForSourceObelisk(
+            ResourceKey<Level> sourceDimension,
+            BlockPos obeliskPos
+    ) {
+        int removed = 0;
+        Iterator<PortalSession> iterator = this.portalSessions.values().iterator();
+
+        while (iterator.hasNext()) {
+            PortalSession session = iterator.next();
+
+            if (session.hasValidSourceIdentity()
+                    && session.sourceDimension().equals(sourceDimension)
+                    && session.obeliskPos().equals(obeliskPos)) {
+                iterator.remove();
+                removed++;
+            }
+        }
+
+        if (removed > 0) {
+            this.setDirty();
+        }
+
+        return removed;
     }
 
     public int removePortalSessionsForInactiveInstances() {
@@ -492,7 +617,7 @@ public final class DungeonManagerSavedData extends SavedData {
         while (iterator.hasNext()) {
             PortalSession session = iterator.next();
 
-            if (session.isExpired(gameTime)) {
+            if (!session.hasValidSourceIdentity() || session.isExpired(gameTime)) {
                 iterator.remove();
                 removed++;
             }
@@ -509,31 +634,6 @@ public final class DungeonManagerSavedData extends SavedData {
         return this.portalSessions.size();
     }
 
-    public int closeEmptyActiveInstances(long gameTime) {
-        int changedCount = 0;
-
-        for (DungeonInstance instance : this.instances.values()) {
-            if (instance.status() != DungeonStatus.ACTIVE) {
-                continue;
-            }
-
-            if (!instance.participants().isEmpty()) {
-                continue;
-            }
-
-            if (instance.setStatus(DungeonStatus.PORTAL_CLOSED)) {
-                instance.markClosedAt(gameTime);
-                changedCount++;
-            }
-        }
-
-        if (changedCount > 0) {
-            this.setDirty();
-        }
-
-        return changedCount;
-    }
-
     public Optional<DungeonRaidInstance> findActiveEncounter(
             DungeonInstanceId dungeonInstanceId
     ) {
@@ -547,6 +647,34 @@ public final class DungeonManagerSavedData extends SavedData {
             DungeonRaidInstance raid = this.raids.get(raidId);
 
             if (raid != null && !raid.isTerminal()) {
+                return Optional.of(raid);
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    public Optional<DungeonRaidInstance> findEncounter(
+            DungeonInstanceId dungeonInstanceId
+    ) {
+        Set<DungeonRaidId> raidIds = this.raidsByInstance.get(dungeonInstanceId);
+
+        if (raidIds == null || raidIds.isEmpty()) {
+            return Optional.empty();
+        }
+
+        for (DungeonRaidId raidId : raidIds) {
+            DungeonRaidInstance raid = this.raids.get(raidId);
+
+            if (raid != null && !raid.isTerminal()) {
+                return Optional.of(raid);
+            }
+        }
+
+        for (DungeonRaidId raidId : raidIds) {
+            DungeonRaidInstance raid = this.raids.get(raidId);
+
+            if (raid != null) {
                 return Optional.of(raid);
             }
         }
@@ -612,6 +740,77 @@ public final class DungeonManagerSavedData extends SavedData {
 
     public void markEncounterDirty() {
         this.setDirty();
+    }
+
+    public DungeonRewardRecord addReward(DungeonRewardRecord reward) {
+        DungeonRewardRecord previous = this.rewards.put(reward.rewardId(), reward);
+
+        if (previous != reward) {
+            this.setDirty();
+        }
+
+        return reward;
+    }
+
+    public Optional<DungeonRewardRecord> findRewardByInstance(DungeonInstanceId instanceId) {
+        return this.rewards.values()
+                .stream()
+                .filter(reward -> reward.instanceId().equals(instanceId))
+                .findFirst();
+    }
+
+    public Optional<DungeonRewardRecord> findRewardAt(
+            DungeonInstanceId instanceId,
+            BlockPos pos
+    ) {
+        return this.rewards.values()
+                .stream()
+                .filter(reward -> reward.instanceId().equals(instanceId))
+                .filter(reward -> reward.rewardPos().map(pos::equals).orElse(false))
+                .findFirst();
+    }
+
+    public Collection<DungeonRewardRecord> rewards() {
+        return List.copyOf(this.rewards.values());
+    }
+
+    public void markRewardsDirty() {
+        this.setDirty();
+    }
+
+    public void registerRuntimeArtifact(DungeonRuntimeArtifactRecord artifact) {
+        boolean exists = this.runtimeArtifacts.stream()
+                .anyMatch(existing -> existing.equals(artifact));
+
+        if (!exists) {
+            this.runtimeArtifacts.add(artifact);
+            this.setDirty();
+        }
+    }
+
+    public List<DungeonRuntimeArtifactRecord> runtimeArtifactsForInstance(
+            DungeonInstanceId instanceId
+    ) {
+        return this.runtimeArtifacts.stream()
+                .filter(artifact -> artifact.instanceId().equals(instanceId))
+                .toList();
+    }
+
+    public int removeRuntimeArtifactsForInstance(
+            DungeonInstanceId instanceId,
+            DungeonRuntimeArtifactType type
+    ) {
+        int before = this.runtimeArtifacts.size();
+        this.runtimeArtifacts.removeIf(artifact ->
+                artifact.instanceId().equals(instanceId) && artifact.type() == type
+        );
+        int removed = before - this.runtimeArtifacts.size();
+
+        if (removed > 0) {
+            this.setDirty();
+        }
+
+        return removed;
     }
 
     public boolean retireRuntimeInstance(
@@ -720,7 +919,9 @@ public final class DungeonManagerSavedData extends SavedData {
         List<DungeonInstance> result = new ArrayList<>();
 
         for (DungeonInstance instance : this.instances.values()) {
-            if (instance.status() != DungeonStatus.PORTAL_CLOSED) {
+            if (instance.status() != DungeonStatus.PORTAL_CLOSED
+                    && instance.status() != DungeonStatus.FAILED
+                    && instance.status() != DungeonStatus.EXPIRED) {
                 continue;
             }
 

@@ -10,7 +10,9 @@ import io.github.naimjeg.obeliskdepths.dungeon.serialization.DungeonCodecs;
 import net.minecraft.resources.Identifier;
 
 import java.util.LinkedHashSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -53,7 +55,15 @@ public final class DungeonRaidInstance {
 
                     DungeonCodecs.UUID_CODEC.listOf()
                             .optionalFieldOf("resolved_mob_ids", List.of())
-                            .forGetter(raid -> List.copyOf(raid.resolvedMobIds)),
+                            .forGetter(raid -> List.of()),
+
+                    DungeonMissingMobRecord.CODEC.listOf()
+                            .optionalFieldOf("missing_mobs", List.of())
+                            .forGetter(DungeonRaidInstance::missingMobRecords),
+
+                    DungeonCodecs.UUID_CODEC.listOf()
+                            .optionalFieldOf("cleanup_pending_mob_ids", List.of())
+                            .forGetter(raid -> List.copyOf(raid.cleanupPendingMobIds)),
 
                     Codec.LONG.optionalFieldOf("next_spawn_game_time", 0L)
                             .forGetter(DungeonRaidInstance::nextSpawnGameTime),
@@ -80,7 +90,8 @@ public final class DungeonRaidInstance {
     private int creditedNormalKills;
     private int desiredLivingMobCount;
     private final Set<UUID> trackedMobIds = new LinkedHashSet<>();
-    private final Set<UUID> resolvedMobIds = new LinkedHashSet<>();
+    private final Map<UUID, Long> missingMobSinceGameTime = new HashMap<>();
+    private final Set<UUID> cleanupPendingMobIds = new LinkedHashSet<>();
     private long nextSpawnGameTime;
     private int spawnFailureCount;
     private boolean bossCompleted;
@@ -101,6 +112,8 @@ public final class DungeonRaidInstance {
             int desiredLivingMobCount,
             List<UUID> trackedMobIds,
             List<UUID> resolvedMobIds,
+            List<DungeonMissingMobRecord> missingMobs,
+            List<UUID> cleanupPendingMobIds,
             long nextSpawnGameTime,
             int spawnFailureCount,
             boolean bossCompleted
@@ -118,10 +131,20 @@ public final class DungeonRaidInstance {
                 ? DungeonEncounterPhase.COMBAT
                 : encounterPhase;
         this.normalKillQuota = Math.max(0, normalKillQuota);
-        this.creditedNormalKills = Math.max(0, creditedNormalKills);
+        this.creditedNormalKills = clampCreditedKills(creditedNormalKills, this.normalKillQuota);
         this.desiredLivingMobCount = Math.max(0, desiredLivingMobCount);
         this.trackedMobIds.addAll(trackedMobIds == null ? List.of() : trackedMobIds);
-        this.resolvedMobIds.addAll(resolvedMobIds == null ? List.of() : resolvedMobIds);
+        if (missingMobs != null) {
+            for (DungeonMissingMobRecord missingMob : missingMobs) {
+                if (missingMob != null && this.trackedMobIds.contains(missingMob.entityId())) {
+                    this.missingMobSinceGameTime.put(
+                            missingMob.entityId(),
+                            Math.max(0L, missingMob.missingSinceGameTime())
+                    );
+                }
+            }
+        }
+        this.cleanupPendingMobIds.addAll(cleanupPendingMobIds == null ? List.of() : cleanupPendingMobIds);
         this.nextSpawnGameTime = nextSpawnGameTime;
         this.spawnFailureCount = Math.max(0, spawnFailureCount);
         this.bossCompleted = bossCompleted;
@@ -139,6 +162,8 @@ public final class DungeonRaidInstance {
             int desiredLivingMobCount,
             List<UUID> trackedMobIds,
             List<UUID> resolvedMobIds,
+            List<DungeonMissingMobRecord> missingMobs,
+            List<UUID> cleanupPendingMobIds,
             long nextSpawnGameTime,
             int spawnFailureCount,
             boolean bossCompleted
@@ -159,6 +184,8 @@ public final class DungeonRaidInstance {
                 desiredLivingMobCount,
                 trackedMobIds,
                 resolvedMobIds,
+                missingMobs,
+                cleanupPendingMobIds,
                 nextSpawnGameTime,
                 spawnFailureCount,
                 bossCompleted
@@ -186,6 +213,8 @@ public final class DungeonRaidInstance {
                 normalKillQuota,
                 0,
                 desiredLivingMobCount,
+                List.of(),
+                List.of(),
                 List.of(),
                 List.of(),
                 gameTime,
@@ -251,7 +280,23 @@ public final class DungeonRaidInstance {
     }
 
     public Set<UUID> resolvedMobIds() {
-        return Set.copyOf(this.resolvedMobIds);
+        return Set.of();
+    }
+
+    public Set<UUID> cleanupPendingMobIds() {
+        return Set.copyOf(this.cleanupPendingMobIds);
+    }
+
+    public Optional<Long> missingSinceGameTime(UUID entityId) {
+        return Optional.ofNullable(this.missingMobSinceGameTime.get(entityId));
+    }
+
+    public List<DungeonMissingMobRecord> missingMobRecords() {
+        return this.missingMobSinceGameTime.entrySet()
+                .stream()
+                .filter(entry -> this.trackedMobIds.contains(entry.getKey()))
+                .map(entry -> new DungeonMissingMobRecord(entry.getKey(), entry.getValue()))
+                .toList();
     }
 
     public long nextSpawnGameTime() {
@@ -297,20 +342,80 @@ public final class DungeonRaidInstance {
         return true;
     }
 
+    public boolean markEncounterComplete() {
+        boolean changed = false;
+
+        if (this.encounterPhase != DungeonEncounterPhase.COMPLETE) {
+            this.encounterPhase = DungeonEncounterPhase.COMPLETE;
+            changed = true;
+        }
+
+        if (this.status != DungeonRaidStatus.WON) {
+            this.status = DungeonRaidStatus.WON;
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    public boolean markEncounterExpired() {
+        boolean changed = false;
+
+        if (this.encounterPhase != DungeonEncounterPhase.EXPIRED) {
+            this.encounterPhase = DungeonEncounterPhase.EXPIRED;
+            changed = true;
+        }
+
+        if (this.status != DungeonRaidStatus.EXPIRED) {
+            this.status = DungeonRaidStatus.EXPIRED;
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    public boolean markEncounterFailed() {
+        boolean changed = false;
+
+        if (this.encounterPhase != DungeonEncounterPhase.FAILED) {
+            this.encounterPhase = DungeonEncounterPhase.FAILED;
+            changed = true;
+        }
+
+        if (this.status != DungeonRaidStatus.FAILED) {
+            this.status = DungeonRaidStatus.FAILED;
+            changed = true;
+        }
+
+        return changed;
+    }
+
     public boolean trackMob(UUID entityId) {
+        this.cleanupPendingMobIds.remove(entityId);
+        this.missingMobSinceGameTime.remove(entityId);
         return this.trackedMobIds.add(entityId);
     }
 
     public boolean untrackMob(UUID entityId) {
+        this.missingMobSinceGameTime.remove(entityId);
         return this.trackedMobIds.remove(entityId);
     }
 
     public boolean resolveMob(UUID entityId) {
-        this.trackedMobIds.remove(entityId);
-        return this.resolvedMobIds.add(entityId);
+        if (entityId == null || !this.trackedMobIds.remove(entityId)) {
+            return false;
+        }
+
+        this.missingMobSinceGameTime.remove(entityId);
+        this.cleanupPendingMobIds.remove(entityId);
+        return true;
     }
 
     public boolean creditNormalKill() {
+        if (this.normalKillQuota > 0 && this.creditedNormalKills >= this.normalKillQuota) {
+            return false;
+        }
+
         int next = this.creditedNormalKills + 1;
 
         if (next == this.creditedNormalKills) {
@@ -319,6 +424,39 @@ public final class DungeonRaidInstance {
 
         this.creditedNormalKills = next;
         return true;
+    }
+
+    public boolean migrateCreditedNormalKills(int migratedKills) {
+        int clamped = clampCreditedKills(migratedKills, this.normalKillQuota);
+
+        if (clamped <= this.creditedNormalKills) {
+            return false;
+        }
+
+        this.creditedNormalKills = clamped;
+        return true;
+    }
+
+    public boolean normalKillQuotaComplete() {
+        return this.normalKillQuota > 0
+                && this.creditedNormalKills >= this.normalKillQuota;
+    }
+
+    public boolean markMobTemporarilyMissing(UUID entityId, long gameTime) {
+        if (!this.trackedMobIds.contains(entityId)) {
+            return false;
+        }
+
+        return this.missingMobSinceGameTime.putIfAbsent(entityId, gameTime) == null;
+    }
+
+    public boolean clearMissingMob(UUID entityId) {
+        return this.missingMobSinceGameTime.remove(entityId) != null;
+    }
+
+    public boolean markCleanupPending(UUID entityId) {
+        this.missingMobSinceGameTime.remove(entityId);
+        return this.cleanupPendingMobIds.add(entityId);
     }
 
     public boolean markBossCompleted() {
@@ -338,6 +476,10 @@ public final class DungeonRaidInstance {
 
         if (this.normalKillQuota <= 0 && normalKillQuota > 0) {
             this.normalKillQuota = normalKillQuota;
+            this.creditedNormalKills = clampCreditedKills(
+                    this.creditedNormalKills,
+                    this.normalKillQuota
+            );
             changed = true;
         }
 
@@ -371,8 +513,14 @@ public final class DungeonRaidInstance {
     public boolean isTerminal() {
         return this.encounterPhase == DungeonEncounterPhase.COMPLETE
                 || this.encounterPhase == DungeonEncounterPhase.EXPIRED
+                || this.encounterPhase == DungeonEncounterPhase.FAILED
                 || this.status == DungeonRaidStatus.WON
                 || this.status == DungeonRaidStatus.FAILED
                 || this.status == DungeonRaidStatus.EXPIRED;
+    }
+
+    private static int clampCreditedKills(int value, int quota) {
+        int nonNegative = Math.max(0, value);
+        return quota > 0 ? Math.min(nonNegative, quota) : nonNegative;
     }
 }

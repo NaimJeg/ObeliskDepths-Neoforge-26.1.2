@@ -1,5 +1,8 @@
 package io.github.naimjeg.obeliskdepths.worldgen.structure.layout;
 
+import io.github.naimjeg.obeliskdepths.dungeon.room.BuiltinDungeonRoomDefinitions;
+import io.github.naimjeg.obeliskdepths.dungeon.room.BuiltinDungeonRooms;
+import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomDefinition;
 import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomType;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraph;
 import io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphEdge;
@@ -21,6 +24,7 @@ import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
+import net.minecraft.resources.Identifier;
 
 /**
  * Converts the authoritative boss-rooted topology into a compact orthogonal
@@ -33,7 +37,7 @@ public final class DungeonGraphEmbeddingPlanner {
     private static final int MIN_CORRIDOR_GAP_CELLS = 1;
     private static final int MAX_CORRIDOR_GAP_CELLS = 16;
     private static final int MAX_LATERAL_OFFSET_CELLS = 24;
-    private static final int MAX_PLANNED_LOOP_CELLS = 32;
+    private static final int MAX_PLANNED_LOOP_CELLS = 64;
     private static final int LOOP_SEARCH_PADDING_CELLS = 8;
     private static final int MAX_LOOP_SEARCH_STATES = 24_000;
 
@@ -88,7 +92,6 @@ public final class DungeonGraphEmbeddingPlanner {
         );
         drafts.put(root.id(), root);
 
-        placeExit(graph, root, drafts, edgePlans, reservedCorridors);
         placeTree(graph, root, drafts, edgePlans, reservedCorridors);
         planAvailableNonTreeEdges(
                 graph,
@@ -155,66 +158,6 @@ public final class DungeonGraphEmbeddingPlanner {
         return plan;
     }
 
-    private static void placeExit(
-            DungeonGraph graph,
-            Draft root,
-            Map<String, Draft> drafts,
-            Map<String, EdgePlan> edgePlans,
-            Set<GridCell> reservedCorridors
-    ) {
-        DungeonGraphNode exitNode = graph.requireNode(graph.exitNodeId());
-        DungeonGraphEdge exitEdge = graph.treeEdges()
-                .stream()
-                .filter(edge -> edge.sourceNodeId().equals(graph.rootNodeId()))
-                .filter(edge -> edge.targetNodeId().equals(graph.exitNodeId()))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Dungeon graph is missing its BOSS -> EXIT tree edge"
-                ));
-
-        DungeonRoomFootprint footprint = footprintFor(exitNode.type());
-        PlacementCandidate candidate = candidateFor(
-                root,
-                footprint,
-                DungeonConnectorSide.SOUTH,
-                MIN_CORRIDOR_GAP_CELLS,
-                0
-        );
-        Draft exit = new Draft(
-                exitNode.id(),
-                exitNode.type(),
-                candidate.origin(),
-                footprint,
-                1,
-                candidate.parentSide().opposite()
-        );
-
-        if (!isRoomPlacementLegal(
-                exit.cellBox(),
-                drafts,
-                reservedCorridors
-        ) || !isCorridorLegal(
-                candidate.corridorCells(),
-                root,
-                drafts,
-                reservedCorridors
-        )) {
-            throw new IllegalArgumentException(
-                    "Unable to place EXIT directly beside BOSS"
-            );
-        }
-
-        acceptTreePlacement(
-                root,
-                exit,
-                exitEdge,
-                candidate,
-                drafts,
-                edgePlans,
-                reservedCorridors
-        );
-    }
-
     private static void placeTree(
             DungeonGraph graph,
             Draft root,
@@ -231,7 +174,6 @@ public final class DungeonGraphEmbeddingPlanner {
             List<DungeonGraphEdge> childEdges = graph.treeEdges()
                     .stream()
                     .filter(edge -> edge.sourceNodeId().equals(parentId))
-                    .filter(edge -> !edge.targetNodeId().equals(graph.exitNodeId()))
                     .toList();
 
             for (int childIndex = 0; childIndex < childEdges.size(); childIndex++) {
@@ -509,7 +451,6 @@ public final class DungeonGraphEmbeddingPlanner {
         List<PlacementCandidate> fallbackCandidates = roomLegalCandidates
                 .stream()
                 .sorted(candidateOrder())
-                .limit(128)
                 .toList();
         List<PlacementCandidate> routedCandidates = new ArrayList<>();
 
@@ -548,6 +489,16 @@ public final class DungeonGraphEmbeddingPlanner {
                                 + nodeId
                                 + " near parent "
                                 + parent.id()
+                                + " parentBox="
+                                + parent.cellBox()
+                                + " childFootprint="
+                                + footprint
+                                + " roomLegalCandidates="
+                                + roomLegalCandidates.size()
+                                + " straightCandidates="
+                                + straightCandidates.size()
+                                + " routedCandidates="
+                                + routedCandidates.size()
                 ));
     }
 
@@ -678,16 +629,15 @@ public final class DungeonGraphEmbeddingPlanner {
             GridCell goal
     ) {
         if (path.isEmpty()
-                || path.size() > MAX_PLANNED_LOOP_CELLS
-                || countTurns(path) > 3) {
+                || path.size() > MAX_PLANNED_LOOP_CELLS) {
             return false;
         }
 
         int directSteps = manhattan(start, goal);
         int routedSteps = path.size() - 1;
         int maximumSteps = Math.max(
-                4,
-                (int) Math.ceil(directSteps * 1.75D) + 4
+                8,
+                (int) Math.ceil(directSteps * 3.0D) + 8
         );
         return routedSteps <= maximumSteps;
     }
@@ -1293,13 +1243,47 @@ public final class DungeonGraphEmbeddingPlanner {
     }
 
     private static DungeonRoomFootprint footprintFor(DungeonRoomType type) {
-        // TODO: In the next content-integration stage, resolve semantic room
-        // definitions, rotations, and authored footprints before embedding.
-        // This debug planner intentionally still uses type-derived rectangles.
+        Identifier definitionId = switch (type) {
+            case START -> BuiltinDungeonRooms.GREAT_SWAMP_START_OPEN_PAVILION;
+            case COMBAT -> BuiltinDungeonRooms.GREAT_SWAMP_COMBAT_OPEN_PAVILION;
+            case TREASURE -> BuiltinDungeonRooms.GREAT_SWAMP_TREASURE_OBELISK_SANCTUM;
+            case BOSS -> BuiltinDungeonRooms.GREAT_SWAMP_BOSS_ALTAR;
+        };
+        DungeonRoomDefinition definition = BuiltinDungeonRoomDefinitions.all()
+                .get(definitionId);
+
+        if (definition == null) {
+            throw new IllegalStateException("Missing built-in room definition: " + definitionId);
+        }
+
+        DungeonRoomFootprint footprint = definition.footprint();
+        int width = planningWidth(type, footprint);
+        int depth = planningDepth(type, footprint);
+
+        return DungeonRoomFootprint.rectangular(width, 1, depth);
+    }
+
+    private static int planningWidth(
+            DungeonRoomType type,
+            DungeonRoomFootprint footprint
+    ) {
         return switch (type) {
-            case START, EXIT, TREASURE -> new DungeonRoomFootprint(2, 1, 2);
-            case COMBAT -> new DungeonRoomFootprint(3, 1, 3);
-            case BOSS -> new DungeonRoomFootprint(5, 1, 5);
+            case START -> Math.max(footprint.widthCells(), 2);
+            case COMBAT -> Math.max(footprint.widthCells(), 3);
+            case TREASURE -> footprint.widthCells();
+            case BOSS -> footprint.widthCells();
+        };
+    }
+
+    private static int planningDepth(
+            DungeonRoomType type,
+            DungeonRoomFootprint footprint
+    ) {
+        return switch (type) {
+            case START -> Math.max(footprint.depthCells(), 2);
+            case COMBAT -> Math.max(footprint.depthCells(), 3);
+            case TREASURE -> footprint.depthCells();
+            case BOSS -> footprint.depthCells();
         };
     }
 

@@ -50,7 +50,7 @@ public final class DungeonContentDefinitionTest {
     private static final Identifier TEST_TEMPLATE =
             Identifier.fromNamespaceAndPath(
                     "obeliskdepths",
-                    "dungeon/basic/room/open_pavilion_01"
+                    "dungeon/great_swamp/room/combat/open_pavilion_01"
             );
     private static final Identifier STANDARD_CONNECTOR =
             BuiltinDungeonRoomDefinitions.BASIC_FLOOR_PASSAGE_CONNECTOR;
@@ -238,13 +238,28 @@ public final class DungeonContentDefinitionTest {
                 BuiltinDungeonThemeDefinitions.greatSwamp();
 
         assertTrue(rooms.containsKey(
+                        BuiltinDungeonRooms.GREAT_SWAMP_START_OPEN_PAVILION),
+                "start open pavilion semantic ID should exist");
+        assertTrue(rooms.containsKey(
                         BuiltinDungeonRooms.GREAT_SWAMP_COMBAT_OPEN_PAVILION),
                 "combat open pavilion semantic ID should exist");
+        assertTrue(rooms.containsKey(
+                        BuiltinDungeonRooms.GREAT_SWAMP_TREASURE_OBELISK_SANCTUM),
+                "treasure obelisk sanctum semantic ID should exist");
+        assertTrue(rooms.containsKey(
+                        BuiltinDungeonRooms.GREAT_SWAMP_BOSS_ALTAR),
+                "boss altar semantic ID should exist");
         assertEquals(
-                BuiltinDungeonTemplates.BASIC_ROOM_OPEN_PAVILION_01,
+                BuiltinDungeonTemplates.GREAT_SWAMP_ROOM_COMBAT_OPEN_PAVILION_01,
                 rooms.get(BuiltinDungeonRooms.GREAT_SWAMP_COMBAT_OPEN_PAVILION)
                         .template(),
-                "room definition template ID should be physical"
+                "combat room definition template ID should be physical"
+        );
+        assertEquals(
+                BuiltinDungeonTemplates.GREAT_SWAMP_ROOM_BOSS_ALTAR_01,
+                rooms.get(BuiltinDungeonRooms.GREAT_SWAMP_BOSS_ALTAR)
+                        .template(),
+                "boss room definition template ID should be physical"
         );
         assertTrue(greatSwamp.roomsFor(DungeonRoomType.COMBAT)
                         .stream()
@@ -300,12 +315,13 @@ public final class DungeonContentDefinitionTest {
                                 corridors
                         )
                         .isEmpty(),
-                "disabled great swamp theme should validate while incomplete"
+                "enabled great swamp theme should validate"
         );
 
         DungeonThemeDefinition enabledIncomplete =
                 new DungeonThemeDefinition(
-                        greatSwamp.roomPools(),
+                        Map.of(DungeonRoomType.COMBAT,
+                                greatSwamp.roomsFor(DungeonRoomType.COMBAT)),
                         greatSwamp.corridorPools(),
                         Optional.empty(),
                         true
@@ -350,8 +366,8 @@ public final class DungeonContentDefinitionTest {
                                 DungeonRoomType.COMBAT,
                                 RandomSource.create(42L)
                         )
-                        .isEmpty(),
-                "resolver should not select rooms from disabled themes"
+                        .isPresent(),
+                "resolver should select rooms from enabled themes"
         );
         assertTrue(
                 DungeonContentResolver
@@ -360,8 +376,8 @@ public final class DungeonContentDefinitionTest {
                                 DungeonConnectorShapeType.STRAIGHT,
                                 RandomSource.create(42L)
                         )
-                        .isEmpty(),
-                "resolver should not select corridors from disabled themes"
+                        .isPresent(),
+                "resolver should select corridors from enabled themes"
         );
 
         Identifier sharedTemplate = rooms
@@ -415,12 +431,17 @@ public final class DungeonContentDefinitionTest {
 
         assertEquals(
                 new DungeonTemplateResourceValidator.Size(8, 16, 8),
-                sizes.get(BuiltinDungeonTemplates.BASIC_ROOM_OPEN_PAVILION_01),
-                "open pavilion NBT size"
+                sizes.get(BuiltinDungeonTemplates.GREAT_SWAMP_ROOM_START_OPEN_PAVILION_01),
+                "start open pavilion NBT size"
+        );
+        assertEquals(
+                new DungeonTemplateResourceValidator.Size(8, 16, 8),
+                sizes.get(BuiltinDungeonTemplates.GREAT_SWAMP_ROOM_COMBAT_OPEN_PAVILION_01),
+                "combat open pavilion NBT size"
         );
         assertEquals(
                 new DungeonTemplateResourceValidator.Size(32, 40, 32),
-                sizes.get(BuiltinDungeonTemplates.BASIC_ROOM_OBELISK_SANCTUM_01),
+                sizes.get(BuiltinDungeonTemplates.GREAT_SWAMP_ROOM_TREASURE_OBELISK_SANCTUM_01),
                 "obelisk sanctum NBT size"
         );
         for (Identifier corridor : BuiltinDungeonTemplates.ALL_SUPPLIED_TEMPLATES
@@ -465,12 +486,6 @@ public final class DungeonContentDefinitionTest {
                         .validateAllSuppliedTemplatesReferenced(rooms, corridors)
                         .isEmpty(),
                 "all supplied templates should be referenced by content definitions"
-        );
-        assertTrue(
-                !Files.exists(resources.resolve(
-                        "data/obeliskdepths/structure/dungeon/great_swamp"
-                )),
-                "old great_swamp structure asset directory should be absent"
         );
     }
 

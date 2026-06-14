@@ -42,7 +42,7 @@ public record DungeonRewardState(
 
     public DungeonRewardState withBossKilled(Optional<BlockPos> chestPos) {
         return new DungeonRewardState(
-                DungeonRewardChestState.SPAWNED,
+                DungeonRewardChestState.PLACEMENT_PENDING,
                 chestPos,
                 true
         );

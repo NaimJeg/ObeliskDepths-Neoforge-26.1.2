@@ -140,8 +140,10 @@ public class ObeliskPortalMenu extends AbstractContainerMenu {
 
         /*
          * This stack is the menu slot stack. ObeliskInteractionHandler consumes
-         * from this stack only after successful new-run entry. If activation
-         * fails, the stack remains in the slot and is returned on close.
+         * from this stack only after successful portal creation. Activation
+         * success closes this menu; the player must physically enter the
+         * spawned portal entity afterward. If portal creation fails, the stack
+         * remains in the slot and is returned on close.
          */
         ItemStack tributeStack = this.tributeSlot.getItem(TRIBUTE_SLOT);
 
