@@ -1,10 +1,10 @@
 package io.github.naimjeg.obeliskdepths.event;
 
 import io.github.naimjeg.obeliskdepths.ObeliskDepths;
+import io.github.naimjeg.obeliskdepths.dungeon.encounter.DungeonEncounterDirector;
+import io.github.naimjeg.obeliskdepths.dungeon.encounter.DungeonMobResolution;
 import io.github.naimjeg.obeliskdepths.dungeon.entity.DungeonEntityData;
 import io.github.naimjeg.obeliskdepths.dungeon.entity.DungeonEntityTracker;
-import io.github.naimjeg.obeliskdepths.dungeon.raid.DungeonRaidService;
-import io.github.naimjeg.obeliskdepths.dungeon.session.DungeonSessionManager;
 import io.github.naimjeg.obeliskdepths.registry.ModDimensions;
 import net.minecraft.server.level.ServerLevel;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -38,14 +38,11 @@ public final class DungeonRaidMobEvents {
         DungeonEntityData value = data.get();
 
         value.raidId().ifPresent(raidId ->
-                DungeonRaidService.markRaidMobKilled(level, raidId)
-        );
-
-        value.instanceId().ifPresent(instanceId ->
-                DungeonSessionManager.onRegisteredDungeonMobKilled(
+                DungeonEncounterDirector.resolveControlledMob(
                         level,
-                        instanceId,
-                        event.getEntity().getUUID()
+                        raidId,
+                        event.getEntity().getUUID(),
+                        DungeonMobResolution.KILLED
                 )
         );
     }

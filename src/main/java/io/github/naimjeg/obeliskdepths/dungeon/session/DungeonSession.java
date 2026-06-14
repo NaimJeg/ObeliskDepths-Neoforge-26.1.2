@@ -284,27 +284,27 @@ public final class DungeonSession {
         return changed;
     }
 
-    public boolean registerSpawnedEntity(
-            UUID entityId,
-            int killScore
-    ) {
-        if (!this.spawnedEntityIds.add(entityId)) {
+    public boolean initializeFixedKillQuota(int requiredKillScore) {
+        if (this.progress.requiredKillScore() == requiredKillScore) {
             return false;
         }
 
-        this.progress = this.progress.withAdditionalRequiredKillScore(killScore);
+        this.progress = new DungeonKillProgress(
+                requiredKillScore,
+                Math.min(this.progress.currentKillScore(), requiredKillScore),
+                this.progress.completionThreshold()
+        );
         return true;
     }
 
-    public boolean markSpawnedEntityKilled(
-            UUID entityId,
-            int killScore
-    ) {
-        if (!this.spawnedEntityIds.remove(entityId)) {
+    public boolean creditNormalCombatKill(int killScore) {
+        DungeonKillProgress next = this.progress.withAddedKillScore(killScore);
+
+        if (next.equals(this.progress)) {
             return false;
         }
 
-        this.progress = this.progress.withAddedKillScore(killScore);
+        this.progress = next;
         return true;
     }
 

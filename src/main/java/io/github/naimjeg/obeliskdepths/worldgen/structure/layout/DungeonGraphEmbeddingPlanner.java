@@ -1293,6 +1293,9 @@ public final class DungeonGraphEmbeddingPlanner {
     }
 
     private static DungeonRoomFootprint footprintFor(DungeonRoomType type) {
+        // TODO: In the next content-integration stage, resolve semantic room
+        // definitions, rotations, and authored footprints before embedding.
+        // This debug planner intentionally still uses type-derived rectangles.
         return switch (type) {
             case START, EXIT, TREASURE -> new DungeonRoomFootprint(2, 1, 2);
             case COMBAT -> new DungeonRoomFootprint(3, 1, 3);

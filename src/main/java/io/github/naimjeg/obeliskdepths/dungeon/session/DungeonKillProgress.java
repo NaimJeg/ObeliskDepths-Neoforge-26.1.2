@@ -85,14 +85,6 @@ public record DungeonKillProgress(
         return Math.max(0.0F, Math.min(1.0F, remaining));
     }
 
-    public DungeonKillProgress withAdditionalRequiredKillScore(int score) {
-        return new DungeonKillProgress(
-                this.requiredKillScore + Math.max(0, score),
-                this.currentKillScore,
-                this.completionThreshold
-        );
-    }
-
     public DungeonKillProgress withAddedKillScore(int score) {
         return new DungeonKillProgress(
                 this.requiredKillScore,

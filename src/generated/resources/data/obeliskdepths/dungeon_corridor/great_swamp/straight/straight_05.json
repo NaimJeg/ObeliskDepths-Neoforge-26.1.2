@@ -1,0 +1,55 @@
+{
+  "allowed_rotations": [
+    "none",
+    "clockwise_90",
+    "clockwise_180",
+    "counterclockwise_90"
+  ],
+  "footprint": {
+    "layers": [
+      [
+        "#"
+      ]
+    ]
+  },
+  "ports": [
+    {
+      "boundary_cell": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "connector_type": "obeliskdepths:connector/basic_floor_passage",
+      "facing": "west",
+      "height_blocks": 4,
+      "id": "west",
+      "opening_min": [
+        0,
+        1,
+        2
+      ],
+      "required": true,
+      "width_blocks": 4
+    },
+    {
+      "boundary_cell": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "connector_type": "obeliskdepths:connector/basic_floor_passage",
+      "facing": "east",
+      "height_blocks": 4,
+      "id": "east",
+      "opening_min": [
+        7,
+        1,
+        2
+      ],
+      "required": true,
+      "width_blocks": 4
+    }
+  ],
+  "shape": "straight",
+  "template": "obeliskdepths:dungeon/basic/corridor/straight_05"
+}

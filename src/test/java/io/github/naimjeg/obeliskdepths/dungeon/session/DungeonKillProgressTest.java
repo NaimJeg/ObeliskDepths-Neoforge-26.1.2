@@ -1,6 +1,11 @@
 package io.github.naimjeg.obeliskdepths.dungeon.session;
 
 import io.github.naimjeg.obeliskdepths.dungeon.id.DungeonInstanceId;
+import io.github.naimjeg.obeliskdepths.dungeon.encounter.DungeonEncounterDirector;
+import io.github.naimjeg.obeliskdepths.dungeon.encounter.DungeonEncounterPhase;
+import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonDifficulty;
+import io.github.naimjeg.obeliskdepths.dungeon.raid.BuiltinDungeonRaids;
+import io.github.naimjeg.obeliskdepths.dungeon.raid.DungeonRaidInstance;
 import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomId;
 import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomState;
 import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomStatus;
@@ -18,7 +23,9 @@ public final class DungeonKillProgressTest {
     public static void main(String[] args) {
         testCompletionThreshold();
         testBossBarProgressHelpers();
-        testDuplicateKillDeduplication();
+        testFixedQuotaDoesNotGrowWhenReplacementRegisters();
+        testEncounterDuplicateResolution();
+        testEncounterPhaseTransitions();
         testInitialBossRoomLocked();
         testUnlockBossRoomsIsIdempotent();
     }
@@ -80,9 +87,8 @@ public final class DungeonKillProgressTest {
         );
     }
 
-    private static void testDuplicateKillDeduplication() {
+    private static void testFixedQuotaDoesNotGrowWhenReplacementRegisters() {
         UUID starter = UUID.nameUUIDFromBytes("starter".getBytes());
-        UUID mob = UUID.nameUUIDFromBytes("mob".getBytes());
         DungeonSession session = new DungeonSession(
                 UUID.nameUUIDFromBytes("session".getBytes()),
                 new DungeonInstanceId(UUID.nameUUIDFromBytes("instance".getBytes())),
@@ -101,22 +107,78 @@ public final class DungeonKillProgressTest {
         );
 
         assertTrue(
-                session.registerSpawnedEntity(mob, 1),
-                "registered mob should add required score"
+                session.initializeFixedKillQuota(20),
+                "encounter start sets a fixed quota"
+        );
+        assertEquals(
+                20,
+                session.progress().requiredKillScore(),
+                "spawning replacements must not change the fixed quota"
         );
         assertTrue(
-                session.markSpawnedEntityKilled(mob, 1),
-                "first registered kill should add progress"
-        );
-        assertFalse(
-                session.markSpawnedEntityKilled(mob, 1),
-                "duplicate registered kill should be ignored"
+                session.creditNormalCombatKill(1),
+                "director-owned normal kill should add progress"
         );
         assertEquals(
                 1,
                 session.progress().currentKillScore(),
                 "duplicate kill must not increment progress twice"
         );
+    }
+
+    private static void testEncounterDuplicateResolution() {
+        DungeonRaidInstance encounter = DungeonRaidInstance.createInstanceEncounter(
+                new DungeonInstanceId(UUID.nameUUIDFromBytes("encounter-instance".getBytes())),
+                BuiltinDungeonRaids.COMBAT_ROOM,
+                12,
+                4,
+                0L
+        );
+        UUID mob = UUID.nameUUIDFromBytes("encounter-mob".getBytes());
+
+        assertEquals(
+                12,
+                encounter.normalKillQuota(),
+                "encounter stores fixed normal-combat quota"
+        );
+        assertTrue(encounter.trackMob(mob), "first tracked mob is accepted");
+        assertTrue(encounter.resolveMob(mob), "first resolution is accepted");
+        assertFalse(encounter.resolveMob(mob), "duplicate resolution is ignored");
+        assertEquals(
+                0,
+                encounter.trackedMobIds().size(),
+                "resolved mob is removed from living tracked set"
+        );
+    }
+
+    private static void testEncounterPhaseTransitions() {
+        DungeonRaidInstance encounter = DungeonRaidInstance.createInstanceEncounter(
+                new DungeonInstanceId(UUID.nameUUIDFromBytes("phase-instance".getBytes())),
+                BuiltinDungeonRaids.COMBAT_ROOM,
+                DungeonEncounterDirector.fixedNormalKillQuota(
+                        new DungeonDifficulty(1, 1.0F, 1.0F, 1)
+                ),
+                DungeonEncounterDirector.desiredLivingMobCount(
+                        new DungeonDifficulty(1, 1.0F, 1.0F, 1)
+                ),
+                0L
+        );
+
+        assertEquals(
+                DungeonEncounterPhase.COMBAT,
+                encounter.encounterPhase(),
+                "new encounter begins in combat phase"
+        );
+        assertTrue(
+                encounter.setEncounterPhase(DungeonEncounterPhase.BOSS),
+                "combat transitions to boss once"
+        );
+        assertFalse(
+                encounter.setEncounterPhase(DungeonEncounterPhase.BOSS),
+                "boss transition is idempotent"
+        );
+        assertTrue(encounter.markBossCompleted(), "boss completion is recorded once");
+        assertFalse(encounter.markBossCompleted(), "boss completion is idempotent");
     }
 
     private static void testInitialBossRoomLocked() {

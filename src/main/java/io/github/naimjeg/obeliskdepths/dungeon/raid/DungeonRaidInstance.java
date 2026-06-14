@@ -2,11 +2,18 @@ package io.github.naimjeg.obeliskdepths.dungeon.raid;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import io.github.naimjeg.obeliskdepths.dungeon.encounter.DungeonEncounterPhase;
+import io.github.naimjeg.obeliskdepths.dungeon.encounter.DungeonEncounterMobRole;
 import io.github.naimjeg.obeliskdepths.dungeon.id.DungeonInstanceId;
 import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomId;
+import io.github.naimjeg.obeliskdepths.dungeon.serialization.DungeonCodecs;
 import net.minecraft.resources.Identifier;
 
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 
 public final class DungeonRaidInstance {
     public static final Codec<DungeonRaidInstance> CODEC =
@@ -27,18 +34,36 @@ public final class DungeonRaidInstance {
                             .optionalFieldOf("status", DungeonRaidStatus.PREPARING)
                             .forGetter(DungeonRaidInstance::status),
 
-                    Codec.INT.optionalFieldOf("current_wave", 0)
-                            .forGetter(DungeonRaidInstance::currentWave),
+                    DungeonEncounterPhase.CODEC
+                            .optionalFieldOf("encounter_phase", DungeonEncounterPhase.COMBAT)
+                            .forGetter(DungeonRaidInstance::encounterPhase),
 
-                    Codec.LONG.optionalFieldOf("next_wave_game_time", 0L)
-                            .forGetter(DungeonRaidInstance::nextWaveGameTime),
+                    Codec.INT.optionalFieldOf("normal_kill_quota", 0)
+                            .forGetter(DungeonRaidInstance::normalKillQuota),
 
-                    Codec.INT.optionalFieldOf("spawned_mob_count", 0)
-                            .forGetter(DungeonRaidInstance::spawnedMobCount),
+                    Codec.INT.optionalFieldOf("credited_normal_kills", 0)
+                            .forGetter(DungeonRaidInstance::creditedNormalKills),
 
-                    Codec.INT.optionalFieldOf("killed_mob_count", 0)
-                            .forGetter(DungeonRaidInstance::killedMobCount)
-            ).apply(instance, DungeonRaidInstance::new));
+                    Codec.INT.optionalFieldOf("desired_living_mob_count", 0)
+                            .forGetter(DungeonRaidInstance::desiredLivingMobCount),
+
+                    DungeonCodecs.UUID_CODEC.listOf()
+                            .optionalFieldOf("tracked_mob_ids", List.of())
+                            .forGetter(raid -> List.copyOf(raid.trackedMobIds)),
+
+                    DungeonCodecs.UUID_CODEC.listOf()
+                            .optionalFieldOf("resolved_mob_ids", List.of())
+                            .forGetter(raid -> List.copyOf(raid.resolvedMobIds)),
+
+                    Codec.LONG.optionalFieldOf("next_spawn_game_time", 0L)
+                            .forGetter(DungeonRaidInstance::nextSpawnGameTime),
+
+                    Codec.INT.optionalFieldOf("spawn_failure_count", 0)
+                            .forGetter(DungeonRaidInstance::spawnFailureCount),
+
+                    Codec.BOOL.optionalFieldOf("boss_completed", false)
+                            .forGetter(DungeonRaidInstance::bossCompleted)
+            ).apply(instance, DungeonRaidInstance::fromCodec));
 
     private final DungeonRaidId id;
     private final DungeonInstanceId dungeonInstanceId;
@@ -50,6 +75,15 @@ public final class DungeonRaidInstance {
     private long nextWaveGameTime;
     private int spawnedMobCount;
     private int killedMobCount;
+    private DungeonEncounterPhase encounterPhase;
+    private int normalKillQuota;
+    private int creditedNormalKills;
+    private int desiredLivingMobCount;
+    private final Set<UUID> trackedMobIds = new LinkedHashSet<>();
+    private final Set<UUID> resolvedMobIds = new LinkedHashSet<>();
+    private long nextSpawnGameTime;
+    private int spawnFailureCount;
+    private boolean bossCompleted;
 
     public DungeonRaidInstance(
             DungeonRaidId id,
@@ -60,7 +94,16 @@ public final class DungeonRaidInstance {
             int currentWave,
             long nextWaveGameTime,
             int spawnedMobCount,
-            int killedMobCount
+            int killedMobCount,
+            DungeonEncounterPhase encounterPhase,
+            int normalKillQuota,
+            int creditedNormalKills,
+            int desiredLivingMobCount,
+            List<UUID> trackedMobIds,
+            List<UUID> resolvedMobIds,
+            long nextSpawnGameTime,
+            int spawnFailureCount,
+            boolean bossCompleted
     ) {
         this.id = id;
         this.dungeonInstanceId = dungeonInstanceId;
@@ -71,38 +114,83 @@ public final class DungeonRaidInstance {
         this.nextWaveGameTime = nextWaveGameTime;
         this.spawnedMobCount = spawnedMobCount;
         this.killedMobCount = killedMobCount;
+        this.encounterPhase = encounterPhase == null
+                ? DungeonEncounterPhase.COMBAT
+                : encounterPhase;
+        this.normalKillQuota = Math.max(0, normalKillQuota);
+        this.creditedNormalKills = Math.max(0, creditedNormalKills);
+        this.desiredLivingMobCount = Math.max(0, desiredLivingMobCount);
+        this.trackedMobIds.addAll(trackedMobIds == null ? List.of() : trackedMobIds);
+        this.resolvedMobIds.addAll(resolvedMobIds == null ? List.of() : resolvedMobIds);
+        this.nextSpawnGameTime = nextSpawnGameTime;
+        this.spawnFailureCount = Math.max(0, spawnFailureCount);
+        this.bossCompleted = bossCompleted;
     }
 
-    public static DungeonRaidInstance createRoomRaid(
-            DungeonInstanceId dungeonInstanceId,
-            DungeonRoomId roomId,
-            Identifier raidType,
-            long gameTime
-    ) {
-        return createRoomRaid(
-                dungeonInstanceId,
-                Optional.of(roomId),
-                raidType,
-                gameTime
-        );
-    }
-
-    private static DungeonRaidInstance createRoomRaid(
+    private static DungeonRaidInstance fromCodec(
+            DungeonRaidId id,
             DungeonInstanceId dungeonInstanceId,
             Optional<DungeonRoomId> roomId,
             Identifier raidType,
+            DungeonRaidStatus status,
+            DungeonEncounterPhase encounterPhase,
+            int normalKillQuota,
+            int creditedNormalKills,
+            int desiredLivingMobCount,
+            List<UUID> trackedMobIds,
+            List<UUID> resolvedMobIds,
+            long nextSpawnGameTime,
+            int spawnFailureCount,
+            boolean bossCompleted
+    ) {
+        return new DungeonRaidInstance(
+                id,
+                dungeonInstanceId,
+                roomId,
+                raidType,
+                status,
+                0,
+                nextSpawnGameTime,
+                0,
+                0,
+                encounterPhase,
+                normalKillQuota,
+                creditedNormalKills,
+                desiredLivingMobCount,
+                trackedMobIds,
+                resolvedMobIds,
+                nextSpawnGameTime,
+                spawnFailureCount,
+                bossCompleted
+        );
+    }
+
+    public static DungeonRaidInstance createInstanceEncounter(
+            DungeonInstanceId dungeonInstanceId,
+            Identifier raidType,
+            int normalKillQuota,
+            int desiredLivingMobCount,
             long gameTime
     ) {
         return new DungeonRaidInstance(
                 DungeonRaidId.create(),
                 dungeonInstanceId,
-                roomId,
+                Optional.empty(),
                 raidType,
-                DungeonRaidStatus.PREPARING,
+                DungeonRaidStatus.ACTIVE,
                 0,
-                gameTime + 100L,
+                gameTime,
                 0,
-                0
+                0,
+                DungeonEncounterPhase.COMBAT,
+                normalKillQuota,
+                0,
+                desiredLivingMobCount,
+                List.of(),
+                List.of(),
+                gameTime,
+                0,
+                false
         );
     }
 
@@ -142,6 +230,42 @@ public final class DungeonRaidInstance {
         return this.killedMobCount;
     }
 
+    public DungeonEncounterPhase encounterPhase() {
+        return this.encounterPhase;
+    }
+
+    public int normalKillQuota() {
+        return this.normalKillQuota;
+    }
+
+    public int creditedNormalKills() {
+        return this.creditedNormalKills;
+    }
+
+    public int desiredLivingMobCount() {
+        return this.desiredLivingMobCount;
+    }
+
+    public Set<UUID> trackedMobIds() {
+        return Set.copyOf(this.trackedMobIds);
+    }
+
+    public Set<UUID> resolvedMobIds() {
+        return Set.copyOf(this.resolvedMobIds);
+    }
+
+    public long nextSpawnGameTime() {
+        return this.nextSpawnGameTime;
+    }
+
+    public int spawnFailureCount() {
+        return this.spawnFailureCount;
+    }
+
+    public boolean bossCompleted() {
+        return this.bossCompleted;
+    }
+
     public boolean setStatus(DungeonRaidStatus status) {
         if (this.status == status) {
             return false;
@@ -164,8 +288,90 @@ public final class DungeonRaidInstance {
         this.killedMobCount++;
     }
 
+    public boolean setEncounterPhase(DungeonEncounterPhase phase) {
+        if (this.encounterPhase == phase) {
+            return false;
+        }
+
+        this.encounterPhase = phase;
+        return true;
+    }
+
+    public boolean trackMob(UUID entityId) {
+        return this.trackedMobIds.add(entityId);
+    }
+
+    public boolean untrackMob(UUID entityId) {
+        return this.trackedMobIds.remove(entityId);
+    }
+
+    public boolean resolveMob(UUID entityId) {
+        this.trackedMobIds.remove(entityId);
+        return this.resolvedMobIds.add(entityId);
+    }
+
+    public boolean creditNormalKill() {
+        int next = this.creditedNormalKills + 1;
+
+        if (next == this.creditedNormalKills) {
+            return false;
+        }
+
+        this.creditedNormalKills = next;
+        return true;
+    }
+
+    public boolean markBossCompleted() {
+        if (this.bossCompleted) {
+            return false;
+        }
+
+        this.bossCompleted = true;
+        return true;
+    }
+
+    public boolean initializeEncounterSettings(
+            int normalKillQuota,
+            int desiredLivingMobCount
+    ) {
+        boolean changed = false;
+
+        if (this.normalKillQuota <= 0 && normalKillQuota > 0) {
+            this.normalKillQuota = normalKillQuota;
+            changed = true;
+        }
+
+        if (this.desiredLivingMobCount <= 0 && desiredLivingMobCount > 0) {
+            this.desiredLivingMobCount = desiredLivingMobCount;
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    public void setNextSpawnGameTime(long gameTime) {
+        this.nextSpawnGameTime = gameTime;
+    }
+
+    public void clearSpawnFailure() {
+        this.spawnFailureCount = 0;
+    }
+
+    public void recordSpawnFailure(long nextRetryGameTime) {
+        this.spawnFailureCount++;
+        this.nextSpawnGameTime = nextRetryGameTime;
+    }
+
+    public DungeonEncounterMobRole currentMobRole() {
+        return this.encounterPhase == DungeonEncounterPhase.BOSS
+                ? DungeonEncounterMobRole.BOSS
+                : DungeonEncounterMobRole.NORMAL;
+    }
+
     public boolean isTerminal() {
-        return this.status == DungeonRaidStatus.WON
+        return this.encounterPhase == DungeonEncounterPhase.COMPLETE
+                || this.encounterPhase == DungeonEncounterPhase.EXPIRED
+                || this.status == DungeonRaidStatus.WON
                 || this.status == DungeonRaidStatus.FAILED
                 || this.status == DungeonRaidStatus.EXPIRED;
     }

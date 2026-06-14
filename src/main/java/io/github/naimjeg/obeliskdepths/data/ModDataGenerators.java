@@ -19,10 +19,12 @@ public final class ModDataGenerators {
     public static void gatherClientData(GatherDataEvent.Client event) {
         event.createProvider(ModModelProvider::new);
         event.createProvider(LangEnUsProvider::new);
-
         event.createProvider(ModBlockTagProvider::new);
         event.createProvider(ModItemTagProvider::new);
         event.createProvider(ModRecipeProvider.Runner::new);
+        event.createProvider(DungeonRoomDefinitionProvider::new);
+        event.createProvider(DungeonCorridorDefinitionProvider::new);
+        event.createProvider(DungeonThemeDefinitionProvider::new);
 
         event.createProvider((output, lookupProvider) -> new LootTableProvider(
                 output,

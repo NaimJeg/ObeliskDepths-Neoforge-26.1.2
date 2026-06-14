@@ -32,7 +32,7 @@ public class ObeliskTemperingScreen
     private static final int DIRECTION_LIST_Y = 16;
     private static final int DIRECTION_LIST_WIDTH = 74;
     private static final int DIRECTION_LIST_HEIGHT = 44;
-    private static final int AFFIX_LIST_X = 184;
+    private static final int AFFIX_LIST_X = 182;
     private static final int AFFIX_LIST_Y = 7;
     private static final int AFFIX_LIST_WIDTH = 68;
     private static final int AFFIX_LIST_HEIGHT = 151;
@@ -43,7 +43,7 @@ public class ObeliskTemperingScreen
     private static final int ENTRY_BOX_X_OFFSET = -5;
     private static final int ENTRY_BOX_Y_OFFSET = -2;
     private static final int ENTRY_BOX_RIGHT_INSET = 1;
-    private static final int ENTRY_BOX_BOTTOM_INSET = 0;
+    private static final int ENTRY_BOX_BOTTOM_INSET = 1;
 
     private static final int COLOR_TEXT_PRIMARY = 0xFFFFFFFF;
     private static final int COLOR_TEXT_SECONDARY = 0xFFB0B0B0;

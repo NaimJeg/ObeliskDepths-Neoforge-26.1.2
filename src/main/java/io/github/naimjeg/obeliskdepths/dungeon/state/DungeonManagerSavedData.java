@@ -11,7 +11,6 @@ import io.github.naimjeg.obeliskdepths.dungeon.portal.DungeonAccessMode;
 import io.github.naimjeg.obeliskdepths.dungeon.portal.PortalSession;
 import io.github.naimjeg.obeliskdepths.dungeon.raid.DungeonRaidId;
 import io.github.naimjeg.obeliskdepths.dungeon.raid.DungeonRaidInstance;
-import io.github.naimjeg.obeliskdepths.dungeon.raid.DungeonRaidStatus;
 import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomId;
 import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomState;
 import io.github.naimjeg.obeliskdepths.dungeon.room.DungeonRoomStatus;
@@ -535,9 +534,8 @@ public final class DungeonManagerSavedData extends SavedData {
         return changedCount;
     }
 
-    public Optional<DungeonRaidInstance> findActiveRoomRaid(
-            DungeonInstanceId dungeonInstanceId,
-            DungeonRoomId roomId
+    public Optional<DungeonRaidInstance> findActiveEncounter(
+            DungeonInstanceId dungeonInstanceId
     ) {
         Set<DungeonRaidId> raidIds = this.raidsByInstance.get(dungeonInstanceId);
 
@@ -548,46 +546,51 @@ public final class DungeonManagerSavedData extends SavedData {
         for (DungeonRaidId raidId : raidIds) {
             DungeonRaidInstance raid = this.raids.get(raidId);
 
-            if (raid == null) {
-                continue;
+            if (raid != null && !raid.isTerminal()) {
+                return Optional.of(raid);
             }
-
-            if (raid.isTerminal()) {
-                continue;
-            }
-
-            if (raid.roomId().isEmpty()) {
-                continue;
-            }
-
-            if (!raid.roomId().get().equals(roomId)) {
-                continue;
-            }
-
-            return Optional.of(raid);
         }
 
         return Optional.empty();
     }
 
-    public DungeonRaidInstance createRoomRaid(
+    public DungeonRaidInstance getOrCreateEncounter(
             DungeonInstanceId dungeonInstanceId,
-            DungeonRoomId roomId,
             Identifier raidType,
+            int normalKillQuota,
+            int desiredLivingMobCount,
             long gameTime
     ) {
-        DungeonRaidInstance raid = DungeonRaidInstance.createRoomRaid(
-                dungeonInstanceId,
-                roomId,
-                raidType,
-                gameTime
-        );
+        return this.findActiveEncounter(dungeonInstanceId)
+                .orElseGet(() -> this.createEncounter(
+                        dungeonInstanceId,
+                        raidType,
+                        normalKillQuota,
+                        desiredLivingMobCount,
+                        gameTime
+                ));
+    }
 
-        this.raids.put(raid.id(), raid);
-        this.indexRaid(raid);
+    public DungeonRaidInstance createEncounter(
+            DungeonInstanceId dungeonInstanceId,
+            Identifier raidType,
+            int normalKillQuota,
+            int desiredLivingMobCount,
+            long gameTime
+    ) {
+        DungeonRaidInstance encounter =
+                DungeonRaidInstance.createInstanceEncounter(
+                        dungeonInstanceId,
+                        raidType,
+                        normalKillQuota,
+                        desiredLivingMobCount,
+                        gameTime
+                );
+
+        this.raids.put(encounter.id(), encounter);
+        this.indexRaid(encounter);
         this.setDirty();
-
-        return raid;
+        return encounter;
     }
 
     public Optional<DungeonRaidInstance> getRaid(DungeonRaidId id) {
@@ -607,77 +610,8 @@ public final class DungeonManagerSavedData extends SavedData {
         return true;
     }
 
-    public DungeonRaidInstance getOrCreateRoomRaid(
-            DungeonInstanceId dungeonInstanceId,
-            DungeonRoomId roomId,
-            Identifier raidType,
-            long gameTime
-    ) {
-        return this.findActiveRoomRaid(dungeonInstanceId, roomId)
-                .orElseGet(() -> this.createRoomRaid(
-                        dungeonInstanceId,
-                        roomId,
-                        raidType,
-                        gameTime
-                ));
-    }
-
-    public boolean setRaidStatus(
-            DungeonRaidId id,
-            DungeonRaidStatus status
-    ) {
-        DungeonRaidInstance raid = this.raids.get(id);
-
-        if (raid == null) {
-            return false;
-        }
-
-        boolean changed = raid.setStatus(status);
-
-        if (changed) {
-            this.setDirty();
-        }
-
-        return changed;
-    }
-
-    public boolean advanceRaidWave(
-            DungeonRaidId id,
-            long nextWaveGameTime
-    ) {
-        DungeonRaidInstance raid = this.raids.get(id);
-
-        if (raid == null) {
-            return false;
-        }
-
-        raid.advanceWave(nextWaveGameTime);
+    public void markEncounterDirty() {
         this.setDirty();
-        return true;
-    }
-
-    public boolean markRaidMobSpawned(DungeonRaidId id) {
-        DungeonRaidInstance raid = this.raids.get(id);
-
-        if (raid == null) {
-            return false;
-        }
-
-        raid.markMobSpawned();
-        this.setDirty();
-        return true;
-    }
-
-    public boolean markRaidMobKilled(DungeonRaidId id) {
-        DungeonRaidInstance raid = this.raids.get(id);
-
-        if (raid == null) {
-            return false;
-        }
-
-        raid.markMobKilled();
-        this.setDirty();
-        return true;
     }
 
     public boolean retireRuntimeInstance(

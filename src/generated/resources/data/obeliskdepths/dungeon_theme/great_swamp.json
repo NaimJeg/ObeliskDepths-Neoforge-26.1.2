@@ -1,0 +1,81 @@
+{
+  "corridor_pools": {
+    "corner": [
+      {
+        "corridor": "obeliskdepths:great_swamp/corner/corner_01",
+        "weight": 1
+      },
+      {
+        "corridor": "obeliskdepths:great_swamp/corner/corner_02",
+        "weight": 1
+      }
+    ],
+    "straight": [
+      {
+        "corridor": "obeliskdepths:great_swamp/straight/straight_01",
+        "weight": 1
+      },
+      {
+        "corridor": "obeliskdepths:great_swamp/straight/straight_02",
+        "weight": 1
+      },
+      {
+        "corridor": "obeliskdepths:great_swamp/straight/straight_03",
+        "weight": 1
+      },
+      {
+        "corridor": "obeliskdepths:great_swamp/straight/straight_04",
+        "weight": 1
+      },
+      {
+        "corridor": "obeliskdepths:great_swamp/straight/straight_05",
+        "weight": 1
+      },
+      {
+        "corridor": "obeliskdepths:great_swamp/straight/straight_06",
+        "weight": 1
+      },
+      {
+        "corridor": "obeliskdepths:great_swamp/straight/straight_07",
+        "weight": 1
+      },
+      {
+        "corridor": "obeliskdepths:great_swamp/straight/straight_08",
+        "weight": 1
+      },
+      {
+        "corridor": "obeliskdepths:great_swamp/straight/straight_09",
+        "weight": 1
+      },
+      {
+        "corridor": "obeliskdepths:great_swamp/straight/straight_10",
+        "weight": 1
+      }
+    ],
+    "tee": [
+      {
+        "corridor": "obeliskdepths:great_swamp/tee/tee_01",
+        "weight": 1
+      },
+      {
+        "corridor": "obeliskdepths:great_swamp/tee/tee_02",
+        "weight": 1
+      }
+    ]
+  },
+  "enabled": false,
+  "room_pools": {
+    "combat": [
+      {
+        "room": "obeliskdepths:great_swamp/combat/open_pavilion",
+        "weight": 1
+      }
+    ],
+    "treasure": [
+      {
+        "room": "obeliskdepths:great_swamp/treasure/obelisk_sanctum",
+        "weight": 1
+      }
+    ]
+  }
+}

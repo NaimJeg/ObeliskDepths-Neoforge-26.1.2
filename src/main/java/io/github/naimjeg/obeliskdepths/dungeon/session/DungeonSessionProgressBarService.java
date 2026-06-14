@@ -1,6 +1,7 @@
 package io.github.naimjeg.obeliskdepths.dungeon.session;
 
 import io.github.naimjeg.obeliskdepths.ObeliskDepths;
+import io.github.naimjeg.obeliskdepths.dungeon.encounter.DungeonEncounterPhase;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonInstance;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonStatus;
 import io.github.naimjeg.obeliskdepths.dungeon.raid.DungeonRaidPlayers;
@@ -47,7 +48,7 @@ public final class DungeonSessionProgressBarService {
         Optional<DungeonInstance> instance = data.getInstance(session.instanceId());
 
         if (instance.isEmpty()
-                || !shouldDisplaySession(session, instance.get())) {
+                || !shouldDisplaySession(data, session, instance.get())) {
             removeSession(session.id());
             return;
         }
@@ -104,11 +105,15 @@ public final class DungeonSessionProgressBarService {
     }
 
     private static boolean shouldDisplaySession(
+            DungeonManagerSavedData data,
             DungeonSession session,
             DungeonInstance instance
     ) {
         return session.state().needsRuntimeTick()
                 && instance.status() == DungeonStatus.ACTIVE
+                && data.findActiveEncounter(instance.id())
+                        .map(encounter -> encounter.encounterPhase() == DungeonEncounterPhase.COMBAT)
+                        .orElse(false)
                 && shouldDisplayProgress(session.progress());
     }
 

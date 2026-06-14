@@ -1,16 +1,33 @@
 package io.github.naimjeg.obeliskdepths.worldgen.structure.layout;
 
+import com.mojang.serialization.Codec;
+import net.minecraft.util.StringRepresentable;
+
 import java.util.EnumSet;
 
-public enum DungeonConnectorShapeType {
-    CAP,
-    STRAIGHT,
-    CORNER,
-    T,
-    CROSS,
-    VERTICAL_CAP,
-    VERTICAL_THROUGH,
-    MIXED_3D;
+public enum DungeonConnectorShapeType implements StringRepresentable {
+    CAP("cap"),
+    STRAIGHT("straight"),
+    CORNER("corner"),
+    T("tee"),
+    CROSS("cross"),
+    VERTICAL_CAP("vertical_cap"),
+    VERTICAL_THROUGH("vertical_through"),
+    MIXED_3D("mixed_3d");
+
+    public static final Codec<DungeonConnectorShapeType> CODEC =
+            StringRepresentable.fromEnum(DungeonConnectorShapeType::values);
+
+    private final String serializedName;
+
+    DungeonConnectorShapeType(String serializedName) {
+        this.serializedName = serializedName;
+    }
+
+    @Override
+    public String getSerializedName() {
+        return this.serializedName;
+    }
 
     public static DungeonConnectorShapeType fromSides(EnumSet<DungeonConnectorSide> sides) {
         boolean hasVertical = sides.stream().anyMatch(DungeonConnectorSide::vertical);

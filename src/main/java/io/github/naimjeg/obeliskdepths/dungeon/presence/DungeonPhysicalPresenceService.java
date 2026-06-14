@@ -56,12 +56,7 @@ public final class DungeonPhysicalPresenceService {
     ) {
         return findCurrentPhysicalInstance(dungeonLevel, player)
                 .map(instanceId::equals)
-                .orElseGet(() -> DungeonSessionManager.findSessionByInstance(
-                                dungeonLevel,
-                                instanceId
-                        )
-                        .map(session -> session.isPhysicalParticipant(player.getUUID()))
-                        .orElse(false));
+                .orElse(false);
     }
 
     private static void recordPhysicalPresence(

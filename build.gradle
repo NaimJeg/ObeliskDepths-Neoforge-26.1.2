@@ -69,10 +69,19 @@ neoForge {
         }
 
         data {
+            serverData()
+            programArguments.addAll '--mod', mod_id, '--all',
+                    '--output', file('src/generated/resources/').getAbsolutePath(),
+                    '--existing', file('src/main/resources/').getAbsolutePath(),
+                    '--existing', file('src/generated/resources/').getAbsolutePath()
+        }
+
+        clientData {
             clientData()
             programArguments.addAll '--mod', mod_id, '--all',
                     '--output', file('src/generated/resources/').getAbsolutePath(),
-                    '--existing', file('src/main/resources/').getAbsolutePath()
+                    '--existing', file('src/main/resources/').getAbsolutePath(),
+                    '--existing', file('src/generated/resources/').getAbsolutePath()
         }
 
         configureEach {
@@ -168,6 +177,7 @@ def mainMethodTests = [
         'io.github.naimjeg.obeliskdepths.dungeon.site.DungeonSiteProjectionCacheGuardTest',
         'io.github.naimjeg.obeliskdepths.dungeon.runtime.DungeonLocatorConfigurationTest',
         'io.github.naimjeg.obeliskdepths.dungeon.runtime.DungeonRuntimeBoundaryTest',
+        'io.github.naimjeg.obeliskdepths.dungeon.content.DungeonContentDefinitionTest',
         'io.github.naimjeg.obeliskdepths.dungeon.session.DungeonKillProgressTest',
         'io.github.naimjeg.obeliskdepths.worldgen.structure.graph.DungeonGraphGeneratorTest',
         'io.github.naimjeg.obeliskdepths.worldgen.structure.layout.DungeonGraphEmbeddingPlannerTest',

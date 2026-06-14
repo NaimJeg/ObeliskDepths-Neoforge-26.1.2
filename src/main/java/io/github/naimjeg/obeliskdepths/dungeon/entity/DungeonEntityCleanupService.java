@@ -1,6 +1,8 @@
 package io.github.naimjeg.obeliskdepths.dungeon.entity;
 
 import io.github.naimjeg.obeliskdepths.dungeon.id.DungeonInstanceId;
+import io.github.naimjeg.obeliskdepths.dungeon.encounter.DungeonEncounterDirector;
+import io.github.naimjeg.obeliskdepths.dungeon.encounter.DungeonMobResolution;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonInstance;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonStatus;
 import io.github.naimjeg.obeliskdepths.dungeon.spatial.DungeonSpatialValidation;
@@ -60,6 +62,14 @@ public final class DungeonEntityCleanupService {
 
         if (instance.isEmpty()
                 || instance.get().status() != DungeonStatus.ACTIVE) {
+            data.get().raidId().ifPresent(raidId ->
+                    DungeonEncounterDirector.resolveControlledMob(
+                            level,
+                            raidId,
+                            entity.getUUID(),
+                            DungeonMobResolution.INVALIDATED
+                    )
+            );
             entity.discard();
             return;
         }
@@ -89,6 +99,14 @@ public final class DungeonEntityCleanupService {
         int ticksOutside = data.get().ticksOutsideDungeon() + 1;
 
         if (ticksOutside >= MAX_TICKS_OUTSIDE_DUNGEON) {
+            data.get().raidId().ifPresent(raidId ->
+                    DungeonEncounterDirector.resolveControlledMob(
+                            level,
+                            raidId,
+                            entity.getUUID(),
+                            DungeonMobResolution.ESCAPED
+                    )
+            );
             entity.discard();
             return;
         }

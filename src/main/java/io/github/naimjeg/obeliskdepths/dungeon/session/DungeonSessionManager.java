@@ -2,6 +2,8 @@ package io.github.naimjeg.obeliskdepths.dungeon.session;
 
 import io.github.naimjeg.obeliskdepths.ObeliskDepths;
 import io.github.naimjeg.obeliskdepths.dungeon.artifact.DungeonRuntimeArtifactCleanupService;
+import io.github.naimjeg.obeliskdepths.dungeon.encounter.DungeonEncounterDirector;
+import io.github.naimjeg.obeliskdepths.dungeon.encounter.DungeonMobResolution;
 import io.github.naimjeg.obeliskdepths.dungeon.id.DungeonInstanceId;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonInstance;
 import io.github.naimjeg.obeliskdepths.dungeon.instance.DungeonInstanceService;
@@ -184,35 +186,24 @@ public final class DungeonSessionManager {
         return changed;
     }
 
-    public static boolean registerSpawnedEntity(
-            ServerLevel dungeonLevel,
-            DungeonInstanceId instanceId,
-            UUID entityId
-    ) {
-        DungeonManagerSavedData data = DungeonManagerSavedData.get(dungeonLevel);
-        Optional<DungeonSession> session = data.findSessionByInstance(instanceId);
-
-        if (session.isEmpty()) {
-            return false;
-        }
-
-        boolean changed = session.get().registerSpawnedEntity(
-                entityId,
-                NORMAL_MOB_KILL_SCORE
-        );
-
-        if (changed) {
-            data.markSessionsDirty();
-        }
-
-        return changed;
-    }
-
     public static boolean onRegisteredDungeonMobKilled(
             ServerLevel dungeonLevel,
             DungeonInstanceId instanceId,
             UUID entityId
     ) {
+        return DungeonEncounterDirector.resolveControlledMob(
+                dungeonLevel,
+                instanceId,
+                entityId,
+                DungeonMobResolution.KILLED
+        );
+    }
+
+    public static boolean initializeEncounterProgress(
+            ServerLevel dungeonLevel,
+            DungeonInstanceId instanceId,
+            int fixedKillQuota
+    ) {
         DungeonManagerSavedData data = DungeonManagerSavedData.get(dungeonLevel);
         Optional<DungeonSession> session = data.findSessionByInstance(instanceId);
 
@@ -220,35 +211,37 @@ public final class DungeonSessionManager {
             return false;
         }
 
-        DungeonSession value = session.get();
-        boolean changed = value.markSpawnedEntityKilled(
-                entityId,
-                NORMAL_MOB_KILL_SCORE
-        );
+        boolean changed = session.get().initializeFixedKillQuota(fixedKillQuota);
 
-        if (!changed) {
+        if (changed) {
+            data.markSessionsDirty();
+            DungeonSessionProgressBarService.updateSession(dungeonLevel, session.get());
+        }
+
+        return changed;
+    }
+
+    public static boolean creditEncounterNormalKill(
+            ServerLevel dungeonLevel,
+            DungeonInstanceId instanceId
+    ) {
+        DungeonManagerSavedData data = DungeonManagerSavedData.get(dungeonLevel);
+        Optional<DungeonSession> session = data.findSessionByInstance(instanceId);
+
+        if (session.isEmpty()) {
             return false;
         }
 
-        data.markSessionsDirty();
+        boolean changed = session.get().creditNormalCombatKill(
+                NORMAL_MOB_KILL_SCORE
+        );
 
-        if (value.progress().isComplete()) {
-            boolean unlockedBossRooms = data.unlockBossRooms(instanceId);
-
-            ObeliskDepths.LOGGER.debug(
-                    "Dungeon session kill threshold reached: session={}, instance={}, score={}/{}, threshold={}, unlockedBossRooms={}",
-                    value.id(),
-                    value.instanceId(),
-                    value.progress().currentKillScore(),
-                    value.progress().requiredKillScore(),
-                    value.progress().completionThreshold(),
-                    unlockedBossRooms
-            );
+        if (changed) {
+            data.markSessionsDirty();
+            DungeonSessionProgressBarService.updateSession(dungeonLevel, session.get());
         }
 
-        DungeonSessionProgressBarService.updateSession(dungeonLevel, value);
-
-        return true;
+        return changed;
     }
 
     public static void tickSessions(ServerLevel dungeonLevel) {
@@ -497,6 +490,11 @@ public final class DungeonSessionManager {
             ServerLevel dungeonLevel,
             DungeonSession session
     ) {
+        DungeonEncounterDirector.cleanupInstance(
+                dungeonLevel,
+                session.instanceId(),
+                DungeonMobResolution.CLEANED
+        );
         int removedEntities = removeRegisteredEntities(dungeonLevel, session);
         DungeonManagerSavedData data = DungeonManagerSavedData.get(dungeonLevel);
 

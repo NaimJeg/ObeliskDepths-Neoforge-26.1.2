@@ -1,6 +1,7 @@
 package io.github.naimjeg.obeliskdepths;
 
 import com.mojang.logging.LogUtils;
+import io.github.naimjeg.obeliskdepths.dungeon.content.DungeonContentReloadListener;
 import io.github.naimjeg.obeliskdepths.network.ClientboundTemperingDirectionStatePayload;
 import io.github.naimjeg.obeliskdepths.network.SelectTemperingDirectionPayload;
 import io.github.naimjeg.obeliskdepths.tempering.ObeliskTemperingDirectionReloadListener;
@@ -34,6 +35,12 @@ public final class ObeliskDepths {
                     ObeliskDepths.MOD_ID,
                     "obelisk_tempering_directions"
             ));
+    private static final ListenerKey<DungeonContentReloadListener>
+            DUNGEON_CONTENT_RELOAD_LISTENER =
+            ListenerKey.create(Identifier.fromNamespaceAndPath(
+                    ObeliskDepths.MOD_ID,
+                    "dungeon_content"
+            ));
 
     public ObeliskDepths(
             IEventBus modEventBus,
@@ -66,6 +73,10 @@ public final class ObeliskDepths {
         event.addRetainedListener(
                 TEMPERING_DIRECTION_RELOAD_LISTENER,
                 new ObeliskTemperingDirectionReloadListener()
+        );
+        event.addRetainedListener(
+                DUNGEON_CONTENT_RELOAD_LISTENER,
+                new DungeonContentReloadListener()
         );
     }
 
